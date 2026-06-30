@@ -1,0 +1,51 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/dotnet
+{
+    "name": "mathewrumsey.dev",
+    "image": "mcr.microsoft.com/devcontainers/base:noble",
+    "initializeCommand": "./.devcontainer/initialize.sh",
+    "postCreateCommand": "./.devcontainer/post-create.sh",
+    "postStartCommand": "./.devcontainer/post-start.sh",
+    "postAttachCommand": "./.devcontainer/post-attach.sh",
+    "runArgs": [
+        "--env-file",
+        "${localWorkspaceFolder}/.devcontainer/.env",
+        "--hostname",
+        "mathewrumsey.dev"
+    ],
+    "features": {
+        "ghcr.io/devcontainers-extra/features/fish-apt-get:1": {},
+        "ghcr.io/devcontainers/features/docker-in-docker:4": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/terraform:1": {},
+        "ghcr.io/guiyomh/features/vim:0": {},
+        "ghcr.io/helpers4/devcontainer/git-absorb:1": {},
+        "ghcr.io/stuartleeks/dev-container-features/shell-history:0": {}
+    },
+    "forwardPorts": [
+        80,
+        443
+    ],
+    "mounts": [
+        {
+            "source": "${localEnv:HOME}/.gitconfig",
+            "target": "/home/vscode/.gitconfig",
+            "type": "bind"
+        },
+        {
+            "source": "${localEnv:HOME}/.ssh",
+            "target": "/home/vscode/.ssh",
+            "type": "bind"
+        }
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "docker.docker",
+                "EditorConfig.EditorConfig",
+                "HashiCorp.terraform",
+                "streetsidesoftware.code-spell-checker"
+            ]
+        }
+    }
+}
