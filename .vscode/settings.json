@@ -1,0 +1,36 @@
+{
+    "editor.formatOnSave": true,
+    "cSpell.words": [
+        "cfargotunnel",
+        "cloudflared",
+        "dnssec",
+        "homelab",
+        "idps",
+        "mathewrumsey",
+        "matrumz",
+        "photoprism",
+        "pihole",
+        "scim"
+    ],
+    "chat.tools.terminal.autoApprove": {
+        "true": true,
+        "/^cd /workspaces/mathewrumsey\\.dev && terraform fmt -recursive -diff$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd /workspaces/mathewrumsey\\.dev && terraform validate 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    },
+    "yaml.format.printWidth": 8000,
+    "yaml.format.proseWrap": "never",
+    "yaml.format.trailingComma": true,
+    "yaml.format.singleQuote": false,
+    "yaml.format.bracketSpacing": true,
+    "yaml.format.enable": true,
+    "yaml.keyOrdering": false,
+    "yaml.style.flowMapping": "allow",
+    "yaml.style.flowSequence": "allow",
+    "yaml.validate": true
+}
