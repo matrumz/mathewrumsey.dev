@@ -1,0 +1,54 @@
+root = true
+
+# All files
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = tab
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Alloy files
+[*.alloy]
+indent_size = 2
+indent_style = space
+
+# Dockerfiles
+[Dockerfile]
+indent_size = 4
+
+# Json files
+[*.{json,jsonc}]
+indent_size = 2
+
+## VSCode Json files
+[{.devcontainer,.vscode}/*.json]
+indent_size = 4
+indent_style = space
+
+# Markdown files
+[*.md]
+indent_size = 4
+
+# Shell scripts
+[*.sh]
+indent_size = 2
+
+# Plaintext files (often used for secrets)
+[*.txt]
+insert_final_newline = false
+
+# Yaml files
+[*.{yml,yaml}]
+indent_size = 2
+indent_style = space
+
+### https://www.terraform-best-practices.com/code-styling ###
+
+# Terraform files
+[*.{tf,tfvars}]
+indent_style = space
+indent_size = 2
+
+[Makefile]
+indent_style = tab
