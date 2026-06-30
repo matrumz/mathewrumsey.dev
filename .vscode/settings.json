@@ -20,5 +20,6 @@
             "approve": true,
             "matchCommandLine": true
         }
-    }
+    },
+    "yaml.format.printWidth": 8000
 }
