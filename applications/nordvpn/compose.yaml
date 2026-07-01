@@ -1,0 +1,80 @@
+# source: https://github.com/bubuntux/nordvpn
+
+x-ref:
+  host:
+    tz: &host_tz ${MATHEWRUMSEY_DEV_HOST__TZ:-America/New_York}
+
+networks:
+  nordvpn-lynx-client.access:
+    name: nordvpn-lynx-client.access
+    ###
+    attachable: true
+    driver: bridge
+    internal: false
+
+secrets:
+  nordvpn.private_key:
+    name: nordvpn.private_key
+    ###
+    file: secrets/private_key.txt
+
+services:
+  nordvpn-lynx-client:
+    container_name: nordvpn-lynx-client
+    image: ghcr.io/bubuntux/nordlynx:latest
+    ###
+    cap_add:
+      - NET_ADMIN
+    environment:
+      ALLOW_LIST: #SECRET# Used for split tunneling; comma-separated list of domains, IPs, or CIDR ranges that should bypass the VPN.
+      COUNTRY_CODE: US
+      # DNS: 103.86.96.100,103.86.99.100,127.0.0.11
+      POST_UP: echo 'nameserver 127.0.0.11' >> /etc/resolv.conf # Use Docker DNS; done because DNS envvar was not working
+      PRIVATE_KEY_FILE: /run/secrets/private_key
+      TZ: *host_tz
+    healthcheck:
+      test: wg show | grep -q 'latest handshake' || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      # Unraid
+      net.unraid.docker.icon: https://i.imgur.com/7rYNYFt.png
+      net.unraid.docker.shell: bash
+    networks:
+      nordvpn-lynx-client.access:
+    pull_policy: always
+    restart: unless-stopped
+    secrets:
+      - source: nordvpn.private_key
+        target: private_key
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1 # Recommended if using ipv4 only
+
+  # This service is a stand-in for any real application (defined in other compose files) that would need to use the VPN.
+  # Note that when using network_mode in this manner, 3rd-party applications referencing this service must be in a network connected to the nordvpn-lynx-client service and reference the protected service by the *nordvpn-lynx-client* hostname and sensitive application's port.
+  # Because of this, you need to take care that apps attached to the vpn client do not have overlapping ports.
+  sensitive_application_example:
+    container_name: sensitive_application_example
+    image: nginx:alpine
+    ###
+    depends_on:
+      nordvpn-lynx-client:
+        condition: service_healthy
+    entrypoint: /entrypoint.sh
+    labels:
+      # Traefik
+      dev.mathewrumsey.traefik.instance: ingress
+      traefik.docker.network: nordvpn-lynx-client.access
+      traefik.enable: "true"
+      traefik.http.services.sensitive_application_example.loadBalancer.server.port: 80
+    network_mode: service:nordvpn-lynx-client
+    restart: unless-stopped
+    volumes:
+      - bind:
+          create_host_path: false
+        read_only: true
+        source: container-data/sensitive_application_example/entrypoint.sh
+        target: /entrypoint.sh
+        type: bind
