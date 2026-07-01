@@ -72,6 +72,7 @@ resource "cloudflare_zone_setting" "ssl" {
 module "cloudflared" {
   source = "./applications/cloudflared"
   application_configs = concat(
+    module.traefik.tunnel_configs,
   )
   cloudflare_zone = cloudflare_zone.this
   domains = [
@@ -79,6 +80,15 @@ module "cloudflared" {
     "*.${local.domain}", # preemptively reserve wildcard subdomain to avoid downtime when adding subdomains in the future
   ]
   proxy_service = module.traefik.proxy_service
+}
+
+module "traefik" {
+  source                   = "./applications/traefik"
+  apex_domain              = local.domain
+  cloudflare_access_policy = cloudflare_zero_trust_access_policy.allow_me_us.id
+  cloudflare_idp           = cloudflare_zero_trust_access_identity_provider.google.id
+  cloudflare_team_name     = local.cloudflare_team_name
+  cloudflare_zone          = cloudflare_zone.this.id
 }
 
 #endregion
