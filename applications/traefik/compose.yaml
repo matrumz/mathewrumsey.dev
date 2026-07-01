@@ -56,7 +56,9 @@ x-ref:
           start_period: 20s
           test: ["CMD", "traefik", "healthcheck"] # Requires ping entrypoint & enablement in static config
           timeout: 10s
-        labels: &traefik_services_common_labels # Unraid
+        labels: &traefik_services_common_labels # Grafana
+          dev.mathewrumsey.grafana.instance: default
+          # Unraid
           net.unraid.docker.icon: https://raw.githubusercontent.com/traefik/traefik/refs/heads/master/docs/content/assets/img/traefikproxy-icon-color.png
           net.unraid.docker.shell: sh
         pull_policy: always
@@ -133,6 +135,7 @@ services:
       cloudflared.access:
         aliases:
           - proxy.${MATHEWRUMSEY_DEV_DOMAIN__APEX} # Provides a clean way to hot-swap proxy services with Cloudflare Tunnel
+      grafana.access:
     ports:
       - app_protocol: http
         mode: host
