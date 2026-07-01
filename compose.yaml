@@ -1,1 +1,2 @@
 include:
+  - path: [applications/cloudflared/compose.yaml, applications/cloudflared/compose.override.yaml]
