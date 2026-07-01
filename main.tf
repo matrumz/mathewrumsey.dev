@@ -69,4 +69,16 @@ resource "cloudflare_zone_setting" "ssl" {
 
 #region Submodules
 
+module "cloudflared" {
+  source = "./applications/cloudflared"
+  application_configs = concat(
+  )
+  cloudflare_zone = cloudflare_zone.this
+  domains = [
+    local.domain,        # primary apex domain
+    "*.${local.domain}", # preemptively reserve wildcard subdomain to avoid downtime when adding subdomains in the future
+  ]
+  proxy_service = module.traefik.proxy_service
+}
+
 #endregion

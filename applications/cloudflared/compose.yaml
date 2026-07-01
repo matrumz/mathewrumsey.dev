@@ -1,0 +1,40 @@
+# https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/
+
+networks:
+  cloudflared.access:
+    name: cloudflared.access
+    ###
+    attachable: false
+    driver: bridge
+    internal: false
+
+secrets:
+  cloudflared.token:
+    name: cloudflared.token
+    ###
+    file: secrets/token.txt
+
+services:
+  cloudflared:
+    container_name: cloudflared
+    image: cloudflare/cloudflared:latest
+    ###
+    command: [ "tunnel", "run" ]
+    environment:
+      TUNNEL_LOG_OUTPUT: json
+      # todo TUNNEL_METRICS: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/#metrics
+      TUNNEL_TOKEN_FILE: /run/secrets/token
+      TZ: ${MATHEWRUMSEY_DEV_HOST__TZ:-America/New_York}
+    labels:
+      # Grafana
+      dev.mathewrumsey.grafana.instance: default
+      # Unraid
+      net.unraid.docker.icon: https://raw.githubusercontent.com/aeleos/cloudflared/main/cloudflare-icon.png
+    networks:
+      cloudflared.access:
+    pull_policy: always
+    restart: unless-stopped
+    secrets:
+      - mode: 0444
+        source: cloudflared.token
+        target: token
