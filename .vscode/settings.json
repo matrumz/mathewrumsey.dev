@@ -21,5 +21,14 @@
             "matchCommandLine": true
         }
     },
-    "yaml.format.printWidth": 8000
+    "yaml.format.printWidth": 8000,
+    "yaml.format.proseWrap": "never",
+    "yaml.format.trailingComma": true,
+    "yaml.format.singleQuote": false,
+    "yaml.format.bracketSpacing": true,
+    "yaml.format.enable": true,
+    "yaml.keyOrdering": false,
+    "yaml.style.flowMapping": "allow",
+    "yaml.style.flowSequence": "allow",
+    "yaml.validate": true
 }
