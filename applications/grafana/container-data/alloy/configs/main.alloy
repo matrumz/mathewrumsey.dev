@@ -1,0 +1,115 @@
+logging {
+  level  = "info"
+  format = "json"
+}
+
+/* *****************************************************************************
+ * Targets
+ **************************************************************************** */
+
+discovery.docker "host_docker" {
+  host = "unix:///var/run/docker.sock"
+  // Use the filter block to whitelist containers
+  filter {
+    name = "label"
+    values = ["dev.mathewrumsey.grafana.instance=default"] // Only scrape containers with this label
+  }
+}
+
+// Because Unraid uses logrotate with "create", we don't need to worry about lost lines
+// https://grafana.com/docs/loki/latest/send-data/promtail/logrotation/
+local.file_match "host" {
+  path_targets = [{"__path__" = "/mnt/host-logs/syslog"}]
+}
+
+/* *****************************************************************************
+ * Sources
+ **************************************************************************** */
+
+loki.source.docker "host_docker" {
+  forward_to = [loki.write.default.receiver]
+  host = "unix:///var/run/docker.sock"
+  labels = {}
+  relabel_rules = discovery.relabel.docker.rules
+  targets = discovery.docker.host_docker.targets
+}
+
+loki.source.file "host" {
+  forward_to = [loki.process.host.receiver]
+  tail_from_end = false
+  targets = local.file_match.host.targets
+}
+
+/* *****************************************************************************
+ * Pipelines
+ **************************************************************************** */
+
+discovery.relabel "docker" {
+  // The meta source labels can be viewed through the Alloy debug webpage
+  /*
+   * Host information
+   */
+  // Statically set the host label to the value of the MATHEWRUMSEY_DEV_HOST__NAME environment variable
+  rule {
+    replacement = sys.env("MATHEWRUMSEY_DEV_HOST__NAME")
+    target_label = "host"
+  }
+  /*
+   * Container information
+   */
+  // Application (removes trailing -.* from container name)
+  rule {
+    regex = "^/(.*?)(?:-.*)?$"
+    source_labels = ["__meta_docker_container_name"]
+    target_label = "application"
+  }
+  // Instance (captures trailing -.* (sans -) from container name; no instance if no match)
+  rule {
+    regex = "^/.*?-(.*)$"
+    source_labels = ["__meta_docker_container_name"]
+    target_label = "application_instance"
+  }
+  // Container name
+  rule {
+    regex = "/(.*)"
+    source_labels = ["__meta_docker_container_name"]
+    target_label = "container"
+  }
+  // Capture the stream (stdout/stderr) the log is coming from
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label = "stream"
+  }
+  /*
+   * Compose information
+   */
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label = "compose_name"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project_config_files"]
+    target_label = "compose_files"
+  }
+  targets = []
+}
+
+loki.process "host" {
+  forward_to = [loki.write.default.receiver]
+  stage.static_labels {
+    values = {
+      application = "unraid",
+      host = sys.env("MATHEWRUMSEY_DEV_HOST__NAME"),
+    }
+  }
+}
+
+/* *****************************************************************************
+ * Receivers
+ **************************************************************************** */
+
+loki.write "default" {
+  endpoint {
+    url = "http://grafana-loki:3100/loki/api/v1/push"
+  }
+}

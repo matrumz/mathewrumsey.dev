@@ -1,0 +1,297 @@
+# Alloy: https://grafana.com/docs/alloy/latest/
+# Loki: https://grafana.com/docs/loki/latest/
+
+x-ref:
+  domain:
+    apex: &domain_apex ${MATHEWRUMSEY_DEV_DOMAIN__APEX:?}
+
+  host:
+    name: &host_name ${MATHEWRUMSEY_DEV_HOST__NAME:?}
+    paths:
+      docker-socket: &host_paths_docker-socket /var/run/docker.sock
+      logs: &host_paths_logs /var/log
+    tz: &host_tz ${MATHEWRUMSEY_DEV_HOST__TZ:-America/New_York}
+
+networks:
+  grafana.access:
+    name: grafana.access
+    ###
+    attachable: true
+    driver: bridge
+    internal: false
+
+  grafana.internal:
+    name: grafana.internal
+    ###
+    attachable: false
+    driver: bridge
+    internal: true
+
+secrets:
+  grafana.admin_password:
+    name: grafana.admin_password
+    ###
+    file: secrets/grafana/admin-password.txt
+
+  grafana.admin_user:
+    name: grafana.admin_user
+    ###
+    file: secrets/grafana/admin-user.txt
+
+services:
+  alloy: # Data collection & processing
+    container_name: grafana-alloy
+    image: grafana/alloy:v1.15.0
+    ###
+    command:
+      - run
+      # - --feature.community-components.enabled # Enable community components
+      - --server.http.listen-addr=0.0.0.0:12345 # Debugging UI
+      - --storage.path=/var/lib/alloy/data
+      - /mnt/configs/main.alloy
+    depends_on:
+      grafana-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+      loki:
+        condition: service_healthy
+        required: true
+        restart: false
+    environment:
+      MATHEWRUMSEY_DEV_HOST__NAME: *host_name
+      TZ: *host_tz
+    labels:
+      # Grafana
+      dev.mathewrumsey.grafana.instance: default
+      # Traefik
+      dev.mathewrumsey.traefik.instance: ingress
+      traefik.docker.network: grafana.access
+      traefik.enable: "true"
+      traefik.http.services.alloy.loadBalancer.server.port: 12345
+      # Unraid
+      net.unraid.docker.icon: https://grafana.com/media/docs/alloy/alloy_icon.png
+      net.unraid.docker.shell: bash
+      net.unraid.docker.webui: https://alloy.${MATHEWRUMSEY_DEV_DOMAIN__APEX}
+    networks:
+      grafana.access: # Needed for debug UI
+      grafana.internal:
+    pull_policy: missing
+    restart: unless-stopped
+    volumes:
+      - # Version-controlled configuration
+        bind:
+          create_host_path: false
+        source: container-data/alloy/configs
+        target: /mnt/configs
+        type: bind
+      - # Instance storage
+        bind:
+          create_host_path: true
+        source: .container-data/alloy
+        target: /var/lib/alloy
+        type: bind
+      ### What remains is host resources we wish to scrape
+      - # Docker socket for container detection
+        bind:
+          create_host_path: false
+        source: *host_paths_docker-socket
+        target: /var/run/docker.sock
+        type: bind
+      - # Host logs
+        bind:
+          create_host_path: false
+        read_only: true
+        source: *host_paths_logs
+        target: /mnt/host-logs
+        type: bind
+
+  grafana: # Visualization
+    container_name: grafana
+    image: grafana/grafana:12.4
+    ###
+    depends_on:
+      grafana-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    environment:
+      GF_INSTANCE_NAME: *host_name
+      GF_LOG_CONSOLE_FORMAT: json
+      GF_PATHS_DATA: &grafana_environment_data /var/lib/grafana
+      GF_PATHS_PROVISIONING: &grafana_environment_provisioning /etc/grafana/provisioning
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/admin_password
+      GF_SECURITY_ADMIN_USER__FILE: /run/secrets/admin_user
+      TZ: *host_tz
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/api/health"]
+      timeout: 10s
+    labels:
+      # Grafana
+      dev.mathewrumsey.grafana.instance: default
+      # Traefik
+      dev.mathewrumsey.traefik.instance: ingress
+      traefik.docker.network: grafana.access
+      traefik.enable: "true"
+      traefik.http.services.grafana.loadBalancer.server.port: 3000
+      # Unraid
+      net.unraid.docker.icon: https://raw.githubusercontent.com/grafana/grafana/refs/heads/main/public/img/fav32.png
+      net.unraid.docker.shell: bash
+      net.unraid.docker.webui: https://grafana.${MATHEWRUMSEY_DEV_DOMAIN__APEX}
+    networks:
+      grafana.access:
+      grafana.internal:
+    restart: unless-stopped
+    secrets:
+      - source: grafana.admin_password
+        target: admin_password
+      - source: grafana.admin_user
+        target: admin_user
+    volumes:
+      - # Version-controlled configuration
+        bind:
+          create_host_path: false
+        source: container-data/grafana/provisioning
+        target: *grafana_environment_provisioning
+        type: bind
+      - # Instance storage
+        bind:
+          create_host_path: true
+        source: .container-data/grafana/data
+        target: *grafana_environment_data
+        type: bind
+
+  loki: # Log aggregation
+    container_name: grafana-loki
+    image: grafana/loki:3
+    ###
+    command:
+      - -config.file=/etc/loki/custom-config.yaml
+    depends_on:
+      grafana-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    environment:
+      TZ: *host_tz
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test: [CMD, /usr/bin/loki, -health]
+      timeout: 10s
+    labels:
+      # Grafana
+      dev.mathewrumsey.grafana.instance: default
+      # Unraid
+      net.unraid.docker.icon: https://raw.githubusercontent.com/grafana/loki/refs/heads/main/docs/sources/logo.png
+    networks:
+      grafana.internal:
+    restart: unless-stopped
+    volumes:
+      - # Version-controlled configuration
+        bind:
+          create_host_path: false
+        source: container-data/loki/configs/loki.yaml
+        target: /etc/loki/custom-config.yaml
+        type: bind
+      - # Instance storage
+        bind:
+          create_host_path: true
+        source: .container-data/loki/loki
+        target: /loki
+        type: bind
+
+  prometheus-grafana: # Metrics aggregation
+    container_name: prometheus-grafana
+    image: prom/prometheus:v3
+    ###
+    command:
+      - --log.format=json
+      - --log.level=info
+      - --config.file=/etc/prometheus/prometheus.yaml
+    depends_on:
+      grafana-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    environment:
+      TZ: *host_tz
+    group_add:
+      - ${MATHEWRUMSEY_DEV_HOST__USERS__docker__GID:?} # For Docker socket access without running as root
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test: [CMD, promtool, check, healthy]
+      timeout: 10s
+    labels:
+      # Grafana
+      dev.mathewrumsey.grafana.instance: default
+      # Traefik
+      dev.mathewrumsey.traefik.instance: ingress
+      traefik.docker.network: grafana.access
+      traefik.enable: "true"
+      traefik.http.services.prometheus.loadBalancer.server.port: 9090
+      # Unraid
+      net.unraid.docker.icon: https://www.clipartmax.com/png/middle/450-4502990_prometheus-logo-logo-prometheus-monitoring.png
+      net.unraid.docker.shell: sh
+      net.unraid.docker.webui: http://prometheus.${MATHEWRUMSEY_DEV_DOMAIN__APEX}
+    networks:
+      grafana.access:
+      grafana.internal:
+    restart: unless-stopped
+    volumes:
+      - # Version-controlled configuration
+        bind:
+          create_host_path: false
+        source: container-data/prometheus/configs/prometheus.yaml
+        target: /etc/prometheus/prometheus.yaml
+        type: bind
+      - # Instance storage
+        bind:
+          create_host_path: true
+        source: .container-data/prometheus/data
+        target: /prometheus
+        type: bind
+      ### What remains is host resources we wish to scrape
+      - # Docker socket for container detection
+        bind:
+          create_host_path: false
+        source: *host_paths_docker-socket
+        target: /var/run/docker.sock
+        type: bind
+
+  grafana-setup:
+    container_name: grafana-setup
+    image: busybox:1
+    ###
+    command:
+      - -euo
+      - pipefail
+      - -c
+      - |2
+        # Pre-creating directories with correct ownership to avoid permission issues when running as non-root user
+        mkdir --parents \
+          /mnt/.container-data/alloy \
+          /mnt/.container-data/grafana/data \
+          /mnt/.container-data/loki/loki \
+          /mnt/.container-data/prometheus/data
+        # alloy runs as root -- no need to change ownership
+        chown -R 472:0 /mnt/.container-data/grafana
+        chown -R 10001:10001 /mnt/.container-data/loki
+        chown -R 65534:65534 /mnt/.container-data/prometheus
+        # Giving all read permissions so I can inspect them later on the host if needed
+        chmod -R a+r /mnt/.container-data
+    entrypoint: sh
+    network_mode: none
+    restart: "no"
+    volumes:
+      - bind:
+          create_host_path: true
+        source: .container-data
+        target: /mnt/.container-data
+        type: bind
