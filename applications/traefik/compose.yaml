@@ -1,0 +1,189 @@
+# config: https://doc.traefik.io/traefik/getting-started/configuration-overview/
+# config file: https://doc.traefik.io/traefik/v2.0/reference/static-configuration/file/
+# docker: https://doc.traefik.io/traefik/providers/docker/
+# LE Cloudflare: https://go-acme.github.io/lego/dns/cloudflare/
+# LE Propagation timeout resolution: https://www.reddit.com/r/Actualfixes/comments/wgdd1n/fix_traefik_dns_certificate_time_limit_exceeded/
+
+x-ref:
+  domain:
+    apex: &domain_apex ${MATHEWRUMSEY_DEV_DOMAIN__APEX:?}
+
+  host:
+    tz: &host_tz ${MATHEWRUMSEY_DEV_HOST__TZ:-America/New_York}
+
+  traefik:
+    config-path: &traefik_config-path /etc/traefik/traefik.yml
+
+    services:
+      common: &traefik_services_common
+        image: traefik:3
+        ###
+        configs: &traefik_services_common_configs
+          - # Expose Traefik dashboard and API
+            mode: 0444
+            source: traefik-common.expose-traefik
+            target: /etc/traefik/dynamic/traefik-common.expose-traefik.yml
+        environment: &traefik_services_common_environment # https://doc.traefik.io/traefik/reference/static-configuration/env/
+          TRAEFIK_ACCESSLOG_FORMAT: json
+          TRAEFIK_ACCESSLOG: "false"
+          TRAEFIK_API: "true"
+          TRAEFIK_ENTRYPOINTS_ping_ADDRESS: :8082
+          TRAEFIK_ENTRYPOINTS_ping: "true"
+          TRAEFIK_ENTRYPOINTS_web_ADDRESS: :80
+          TRAEFIK_ENTRYPOINTS_web_HTTP_REDIRECTIONS_ENTRYPOINT_SCHEME: https
+          TRAEFIK_ENTRYPOINTS_web_HTTP_REDIRECTIONS_ENTRYPOINT_TO: websecure
+          TRAEFIK_ENTRYPOINTS_web: "true"
+          TRAEFIK_ENTRYPOINTS_websecure_ADDRESS: :443
+          TRAEFIK_ENTRYPOINTS_websecure_ASDEFAULT: "true"
+          TRAEFIK_ENTRYPOINTS_websecure_HTTP_TLS: "true"
+          TRAEFIK_ENTRYPOINTS_websecure: "true"
+          TRAEFIK_GLOBAL_CHECKNEWVERSION: "false"
+          TRAEFIK_GLOBAL_SENDANONYMOUSUSAGE: "false"
+          TRAEFIK_LOG_FORMAT: json
+          TRAEFIK_LOG_LEVEL: INFO
+          TRAEFIK_PING_ENTRYPOINT: ping
+          TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT: "false"
+          TRAEFIK_PROVIDERS_DOCKER_WATCH: "true"
+          TRAEFIK_PROVIDERS_DOCKER: "true"
+          TRAEFIK_PROVIDERS_FILE_DIRECTORY: /etc/traefik/dynamic
+          TRAEFIK_PROVIDERS_FILE_WATCH: "true"
+          TRAEFIK_PROVIDERS_FILE: "true"
+          TZ: *host_tz
+        healthcheck:
+          interval: 30s
+          retries: 2
+          start_interval: 10s
+          start_period: 20s
+          test: ["CMD", "traefik", "healthcheck"] # Requires ping entrypoint & enablement in static config
+          timeout: 10s
+        labels: &traefik_services_common_labels # Unraid
+          net.unraid.docker.icon: https://raw.githubusercontent.com/traefik/traefik/refs/heads/master/docs/content/assets/img/traefikproxy-icon-color.png
+          net.unraid.docker.shell: sh
+        pull_policy: always
+        restart: unless-stopped
+        volumes: &traefik_services_common_volumes
+          - # Docker socket
+            type: bind
+            source: /var/run/docker.sock
+            target: /var/run/docker.sock
+            read_only: true
+
+configs:
+  traefik-common.expose-traefik: # Traefik dynamic config YAML to expose Traefik dashboard and API
+    content: |2
+      http:
+        routers:
+          traefik:
+            rule: Host(`{{env "HOSTNAME"}}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))
+            service: api@internal
+
+networks:
+  traefik-ingress.egress:
+    name: traefik-ingress.egress
+    ###
+    attachable: false
+    driver: bridge
+    internal: false
+
+secrets:
+  traefik.cloudflare-dns-api-token:
+    name: traefik.cloudflare-dns-api-token
+    ###
+    file: secrets/cloudflare-dns-api-token.txt
+
+services:
+  traefik-ingress:
+    <<: *traefik_services_common
+    container_name: traefik-ingress
+    hostname: traefik.${MATHEWRUMSEY_DEV_DOMAIN__APEX}
+    ###
+    depends_on:
+      traefik-ingress-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    environment:
+      <<: *traefik_services_common_environment
+      # Certificate configuration
+      CLOUDFLARE_DNS_API_TOKEN_FILE: /run/secrets/cloudflare-dns-api-token
+      # TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_CASERVER: https://acme-staging-v02.api.letsencrypt.org/directory # staging server for testing
+      TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_DNSCHALLENGE_PROPAGATION_DELAYBEFORECHECKS: "60" # uncomment along with disablePropagationCheck if needed to ensure the TXT record is ready before verification is attempted
+      TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_DNSCHALLENGE_PROPAGATION_DISABLECHECKS: "true" # uncomment this if you have issues pulling certificates through cloudflare, By setting this flag to true disables the need to wait for the propagation of the TXT record to all authoritative name servers.
+      TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_DNSCHALLENGE_PROVIDER: cloudflare
+      TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_DNSCHALLENGE_RESOLVERS_0: "1.1.1.1:53"
+      TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_DNSCHALLENGE_RESOLVERS_1: "1.0.0.1:53"
+      TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_DNSCHALLENGE: "true"
+      TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_EMAIL: ${MATHEWRUMSEY_DEV_DOMAIN__ACME__EMAIL:?}
+      TRAEFIK_CERTIFICATESRESOLVERS_default_ACME_STORAGE: /etc/traefik/acme/acme.json
+      TRAEFIK_CERTIFICATESRESOLVERS_default: "true"
+      TRAEFIK_ENTRYPOINTS_websecure_HTTP_TLS_CERTRESOLVER: default
+      TRAEFIK_ENTRYPOINTS_websecure_HTTP_TLS_DOMAINS_0_MAIN: *domain_apex
+      TRAEFIK_ENTRYPOINTS_websecure_HTTP_TLS_DOMAINS_0_SANS: "*.${MATHEWRUMSEY_DEV_DOMAIN__APEX}"
+      # Docker provider configuration
+      TRAEFIK_PROVIDERS_DOCKER_CONSTRAINTS: Label(`dev.mathewrumsey.traefik.instance`,`ingress`) # Ensures only containers with this label are considered by this Traefik instance, allowing multiple Traefik instances to coexist and route to different sets of containers
+      TRAEFIK_PROVIDERS_DOCKER_DEFAULTRULE: Host(`{{ index .Labels "com.docker.compose.service" }}.${MATHEWRUMSEY_DEV_DOMAIN__APEX}`) # evaluates compose services as subdomains of the apex domain by default, can be overridden by explicitly setting traefik.http.routers.<router_name>.rule label on a per-container basis
+    labels:
+      <<: *traefik_services_common_labels
+      # Unraid
+      net.unraid.docker.webui: https://traefik.${MATHEWRUMSEY_DEV_DOMAIN__APEX}/dashboard/#/
+    networks:
+      # Networks required for base functionality
+      traefik-ingress.egress:
+      # Spoke networks allowing Traefik to route to containers without exposing those containers to one another or the host.
+      cloudflared.access:
+        aliases:
+          - proxy.${MATHEWRUMSEY_DEV_DOMAIN__APEX} # Provides a clean way to hot-swap proxy services with Cloudflare Tunnel
+    ports:
+      - app_protocol: http
+        mode: host
+        name: http
+        protocol: tcp
+        published: 80
+        target: 80
+      - app_protocol: https
+        mode: host
+        name: https
+        protocol: tcp
+        published: 443
+        target: 443
+    secrets:
+      - # Cloudflare API token for DNS challenge
+        source: traefik.cloudflare-dns-api-token
+        target: cloudflare-dns-api-token
+    volumes:
+      - <<: *traefik_services_common_volumes
+      - # Certificates
+        source: traefik-ingress.data
+        target: /etc/traefik/acme
+        type: volume
+        volume:
+          nocopy: true
+          subpath: acme
+
+  traefik-ingress-setup:
+    <<: *traefik_services_common
+    container_name: traefik-ingress-setup
+    ###
+    command:
+      - -ex
+      - -c
+      - |2
+        # Configure data volume
+        mkdir --parents /mnt/data/acme
+    entrypoint: sh
+    labels:
+      <<: *traefik_services_common_labels
+      dev.mathewrumsey.grafana.instance: none
+    network_mode: none
+    restart: on-failure:1
+    volumes:
+      - # Data volume
+        source: traefik-ingress.data
+        target: /mnt/data
+        type: volume
+        volume:
+          nocopy: true
+
+volumes:
+  traefik-ingress.data:
+    name: traefik-ingress.data
