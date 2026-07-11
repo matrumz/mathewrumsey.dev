@@ -1,0 +1,113 @@
+name: Terraform Feedback
+description: Report feedback from Terraform actions (validate, plan, etc.)
+inputs:
+  output-comment:
+    description: Whether to post feedback as a PR/issue comment
+    required: false
+    default: "true"
+  output-summary:
+    description: Whether to add feedback to the workflow summary
+    required: false
+    default: "true"
+  tf-fmt-outcome:
+    description: Outcome of terraform fmt
+    required: false
+  tf-init-outcome:
+    description: Outcome of terraform init
+    required: false
+  tf-validate-outcome:
+    description: Outcome of terraform validate
+    required: false
+  tf-validate-output:
+    description: Output of terraform validate
+    required: false
+  tf-plan-outcome:
+    description: Outcome of terraform plan
+    required: false
+  tf-plan-output:
+    description: Output of terraform plan
+    required: false
+  tf-apply-outcome:
+    description: Outcome of terraform apply
+    required: false
+  tf-apply-output:
+    description: Output of terraform apply
+    required: false
+outputs:
+  content:
+    description: Formatted feedback content based on Terraform action outcomes
+    value: ${{ steps.aggregate.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - id: fmt
+      if: ${{ inputs.tf-fmt-outcome }}
+      uses: actions/github-script@v9
+      with:
+        script: |
+          return `#### Terraform Format and Style 🖌\`${{ inputs.tf-fmt-outcome }}\``;
+    - id: init
+      if: ${{ inputs.tf-init-outcome }}
+      uses: actions/github-script@v9
+      with:
+        script: |
+          return `#### Terraform Initialization ⚙️\`${{ inputs.tf-init-outcome }}\``;
+    - id: validate
+      if: ${{ inputs.tf-validate-outcome || inputs.tf-validate-output }}
+      uses: actions/github-script@v9
+      with:
+        script: |
+          return `#### Terraform Validation 🤖\`${{ inputs.tf-validate-outcome }}\`
+          <details><summary>Validation Output</summary>
+          \`\`\`
+          ${{ inputs.tf-validate-output }}
+          \`\`\`
+          </details>\``;
+    - id: plan
+      if: ${{ inputs.tf-plan-outcome || inputs.tf-plan-output }}
+      uses: actions/github-script@v9
+      with:
+        script: |
+          return `#### Terraform Plan 📖\`${{ inputs.tf-plan-outcome }}\`
+          <details><summary>Plan Output</summary>
+          \`\`\`
+          ${{ inputs.tf-plan-output }}
+          \`\`\`
+          </details>\``;
+    - id: apply
+      if: ${{ inputs.tf-apply-outcome || inputs.tf-apply-output }}
+      uses: actions/github-script@v9
+      with:
+        script: |
+          return `#### Terraform Apply 🚀\`${{ inputs.tf-apply-outcome }}\`
+          <details><summary>Apply Output</summary>
+          \`\`\`
+          ${{ inputs.tf-apply-output }}
+          \`\`\`
+          </details>\``;
+    - id: aggregate
+      uses: actions/github-script@v9
+      with:
+        script: |
+          return [${{ steps.fmt.outputs.result }}, ${{ steps.init.outputs.result }}, ${{ steps.validate.outputs.result }}, ${{ steps.plan.outputs.result }}, ${{ steps.apply.outputs.result }}]
+            .filter(Boolean) // Remove any empty sections
+            .join('\n'); // Separate sections with spacing
+    - name: Create PR Comment
+      if: ${{ github.event_name == 'pull_request' && inputs.output-comment == 'true' }}
+      uses: actions/github-script@v9
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: ${{ steps.aggregate.outputs.result }}
+          })
+    - name: Update Summary
+      if: ${{ inputs.output-summary == 'true' }}
+      uses: actions/github-script@v9
+      with:
+        script: |
+          core.summary
+            .addRaw(${{ steps.aggregate.outputs.result }})
+            .write();

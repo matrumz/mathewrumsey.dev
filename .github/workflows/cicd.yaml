@@ -1,0 +1,204 @@
+# Terraform: https://github.com/hashicorp/setup-terraform
+
+name: CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release/**
+  push:
+    branches:
+      - main
+      - release/**
+    tags:
+      - live
+  workflow_dispatch:
+
+# Only allow one instance per branch/PR to avoid redundant runs on multiple commits in quick succession
+# Only allow one instance for the live tag to avoid multiple deployments if multiple commits are tagged in quick succession
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  context:
+    name: Context Build
+    runs-on: ubuntu-latest
+    outputs:
+      run-terraform-validate: ${{ fromJSON(steps.context.outputs.result).run_terraform_validate }}
+      run-terraform-fmt: ${{ fromJSON(steps.context.outputs.result).run_terraform_fmt }}
+      run-terraform-plan: ${{ fromJSON(steps.context.outputs.result).run_terraform_plan }}
+      run-terraform-apply: ${{ fromJSON(steps.context.outputs.result).run_terraform_apply }}
+    steps:
+      - id: context
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const ctx = {
+              run_terraform_validate: true,
+              run_terraform_fmt: false,
+              run_terraform_plan: false,
+              run_terraform_apply: false,
+            }
+
+            // Only check Terraform files formatting in PRs
+            if (context.eventName === 'pull_request') {
+              ctx.run_terraform_fmt = true
+            }
+
+            // If not a draft PR, add terraform-plan task
+            if (context.eventName === 'pull_request' && !context.payload.pull_request.draft) {
+              ctx.run_terraform_plan = true
+            }
+
+            // Only add terraform-apply task for live tag pushes
+            if (context.eventName === 'push' && context.ref === 'refs/tags/live') {
+              ctx.run_terraform_apply = true
+            }
+
+            return ctx
+
+  terraform-validate:
+    name: Terraform Validate
+    if: needs.context.outputs.run-terraform-validate == 'true' || needs.context.outputs.run-terraform-fmt == 'true'
+    needs: [context]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Needed to checkout code
+    outputs:
+      fmt-outcome: ${{ steps.fmt.outcome }}
+      init-outcome: ${{ steps.init.outcome }}
+      validate-outcome: ${{ steps.validate.outcome }}
+      validate-output: ${{ steps.validate.outputs.stdout }}
+    steps:
+      - &terraform-checkout
+        uses: actions/checkout@v7
+        with:
+          lfs: false
+          sparse-checkout: |
+            .github/actions/terraform-**
+            **/*.hcl
+            **/*.tf
+            **/*.tfvars
+          sparse-checkout-cone-mode: false
+      - uses: hashicorp/setup-terraform@v4
+      - uses: ./.github/actions/terraform-set-environment
+        with:
+          tf_backend_s3_id: ${{ secrets.TF_BACKEND_S3_ID }}
+          tf_backend_s3_endpoint: ${{ secrets.TF_BACKEND_S3_ENDPOINT }}
+          tf_backend_s3_key: ${{ secrets.TF_BACKEND_S3_KEY }}
+          tfvars: ${{ secrets.TFVARS }}
+      - name: Terraform fmt
+        id: fmt
+        if: needs.context.outputs.run-terraform-fmt == 'true'
+        run: terraform fmt -check
+        continue-on-error: true
+      - name: Terraform init
+        id: init
+        if: needs.context.outputs.run-terraform-validate == 'true'
+        run: terraform init -input=false
+      - name: Terraform validate
+        id: validate
+        if: needs.context.outputs.run-terraform-validate == 'true'
+        run: terraform validate -no-color
+
+  terraform-plan:
+    name: Terraform Plan
+    if: needs.context.outputs.run-terraform-plan == 'true'
+    needs: [context, terraform-validate]
+    environment: staging
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Needed to checkout code
+    outputs:
+      plan-outcome: ${{ steps.plan.outcome }}
+      plan-output: ${{ steps.plan.outputs.stdout }}
+    steps:
+      - *terraform-checkout
+      - uses: hashicorp/setup-terraform@v4
+      - uses: ./.github/actions/terraform-set-environment
+        with:
+          tf_backend_s3_id: ${{ secrets.TF_BACKEND_S3_ID }}
+          tf_backend_s3_endpoint: ${{ secrets.TF_BACKEND_S3_ENDPOINT }}
+          tf_backend_s3_key: ${{ secrets.TF_BACKEND_S3_KEY }}
+          cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          tfvars: ${{ secrets.TFVARS }}
+      - name: Terraform init
+        id: init
+        run: terraform init -input=false
+      - name: Terraform plan
+        id: plan
+        run: terraform plan -no-color -input=false
+
+  terraform-feedback-ci:
+    name: Terraform CI Feedback
+    if: ${{ always() && (!contains(fromJSON('["skipped", "cancelled"]'), needs.terraform-validate.result) || !contains(fromJSON('["skipped", "cancelled"]'), needs.terraform-plan.result)) }}
+    needs: [terraform-validate, terraform-plan]
+    permissions:
+      contents: read # Needed to checkout code
+      pull-requests: write # Needed to post comments on PRs
+    runs-on: ubuntu-latest
+    steps:
+      - &terraform-feedback-checkout
+        uses: actions/checkout@v7
+        with:
+          lfs: false
+          sparse-checkout: |
+            .github/actions/terraform-feedback
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/terraform-feedback
+        with:
+          output-comment: "true"
+          output-summary: "true"
+          tf-fmt-outcome: ${{ needs.terraform-validate.outputs.fmt-outcome }}
+          tf-init-outcome: ${{ needs.terraform-validate.outputs.init-outcome }}
+          tf-validate-outcome: ${{ needs.terraform-validate.outputs.validate-outcome }}
+          tf-validate-output: ${{ needs.terraform-validate.outputs.validate-output }}
+          tf-plan-outcome: ${{ needs.terraform-plan.outputs.plan-outcome }}
+          tf-plan-output: ${{ needs.terraform-plan.outputs.plan-output }}
+
+  terraform-apply:
+    name: Terraform Apply
+    if: needs.context.outputs.run-terraform-apply == 'true'
+    needs: [context, terraform-plan, terraform-feedback-ci] # terraform-feedback-ci required to give approvers visibility into the plan before approving the production environment deployment
+    environment: production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Needed to checkout code
+    outputs:
+      apply-outcome: ${{ steps.apply.outcome }}
+      apply-output: ${{ steps.apply.outputs.stdout }}
+    steps:
+      - *terraform-checkout
+      - uses: hashicorp/setup-terraform@v4
+      - uses: ./.github/actions/terraform-set-environment
+        with:
+          tf_backend_s3_id: ${{ secrets.TF_BACKEND_S3_ID }}
+          tf_backend_s3_endpoint: ${{ secrets.TF_BACKEND_S3_ENDPOINT }}
+          tf_backend_s3_key: ${{ secrets.TF_BACKEND_S3_KEY }}
+          cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          tfvars: ${{ secrets.TFVARS }}
+      - name: Terraform init
+        run: terraform init -input=false
+      - name: Load Terraform Plan
+        run: echo ${{ needs.terraform-plan.outputs.plan-output }} > tfplan.txt
+      - name: Terraform apply
+        run: terraform apply -no-color -input=false -auto-approve tfplan.txt
+
+  terraform-feedback-cd:
+    name: Terraform CD Feedback
+    if: ${{ always() && !contains(fromJSON('["skipped", "cancelled"]'), needs.terraform-apply.result) }}
+    needs: [terraform-apply]
+    permissions:
+      contents: read # Needed to checkout code
+      pull-requests: write # Needed to post comments on PRs
+    runs-on: ubuntu-latest
+    steps:
+      - *terraform-feedback-checkout
+      - uses: ./.github/actions/terraform-feedback
+        with:
+          output-comment: "true"
+          output-summary: "true"
+          tf-apply-outcome: ${{ needs.terraform-apply.outputs.apply-outcome }}
+          tf-apply-output: ${{ needs.terraform-apply.outputs.apply-output }}

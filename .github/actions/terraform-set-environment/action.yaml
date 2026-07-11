@@ -1,0 +1,55 @@
+name: Terraform Set Environment
+description: Set Terraform environment (via variables, tfvars files, etc.) for
+  use in subsequent Terraform actions
+inputs:
+  tf_backend_s3_id:
+    description: AWS access key id for Terraform backend
+    required: true
+  tf_backend_s3_endpoint:
+    description: AWS S3 endpoint URL for Terraform backend
+    required: true
+  tf_backend_s3_key:
+    description: AWS secret access key for Terraform backend
+    required: true
+  cloudflare_api_token:
+    description: Cloudflare API token
+    required: false
+  tfvars:
+    description: Content to write to terraform.tfvars
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Set Terraform Environment
+      id: set-env
+      uses: actions/github-script@v9
+      env:
+        export_AWS_ACCESS_KEY_ID: ${{ inputs.tf_backend_s3_id }}
+        export_AWS_ENDPOINT_URL_S3: ${{ inputs.tf_backend_s3_endpoint }}
+        export_AWS_SECRET_ACCESS_KEY: ${{ inputs.tf_backend_s3_key }}
+        export_CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare_api_token }}
+        file_tfvars: |
+          terraform.tfvars
+          ${{ inputs.tfvars }}
+      with:
+        script: |
+          const fs = require('node:fs')
+
+          // Iterate through values set as envvars
+          for (const [key, value] of Object.entries(process.env)) {
+
+            // If the envvar starts with 'export_', set it as an environment variable for subsequent steps
+            if (key.startsWith('export_')) {
+              const envVarName = key.replace('export_', '')
+              console.log(`Setting environment variable: $${envVarName}`)
+              core.exportVariable(envVarName, value)
+            }
+
+            // If the envvar starts with 'file_', write its value to a file (path indicated by first line relative to workspace root)
+            if (key.startsWith('file_')) {
+              const [filePath, ...fileContent] = value.split('\n')
+              fs.writeFileSync(filePath, fileContent.join('\n'))
+              console.log(`Wrote file: ${filePath}`)
+            }
+
+          }
