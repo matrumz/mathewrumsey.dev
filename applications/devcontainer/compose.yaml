@@ -1,0 +1,124 @@
+x-ref:
+  host:
+    paths:
+      project: &host_paths_project ${MATHEWRUMSEY_DEV_HOST__PATHS__project:?}
+    tz: &host_tz ${MATHEWRUMSEY_DEV_HOST__TZ:-America/New_York}
+    users:
+      default:
+        gid: &host_users_default_gid ${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?}
+        uid: &host_users_default_uid ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}
+        ugid: &host_users_default_ugid ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?}
+      docker:
+        gid: &host_users_docker_gid ${MATHEWRUMSEY_DEV_HOST__USERS__docker__GID:?}
+
+  volumes:
+    docker: &volumes_docker-socket
+      bind:
+        create_host_path: false
+      source: /var/run/docker.sock
+      target: /var/run/docker.sock
+      type: bind
+
+  devcontainer:
+    services:
+      common: &devcontainer_services_common
+        build: &devcontainer_services_common_build
+          args: &devcontainer_services_common_build_args
+            DOCKER_GID: *host_users_docker_gid
+            PGID: *host_users_default_gid
+            PUID: *host_users_default_uid
+            VARIANT: universal
+            VERSION: 5-linux
+          pull: true
+          target: vsc
+        environment: &devcontainer_services_common_environment
+          TUNNEL_LOG: warn
+          # TODO json logging
+          TZ: *host_tz
+        group_add:
+          - *host_users_docker_gid
+        labels: &devcontainer_services_common_labels # Grafana
+          dev.mathewrumsey.grafana.instance: default
+          # Unraid
+          net.unraid.docker.icon: https://raw.githubusercontent.com/microsoft/vscode/refs/heads/main/resources/server/code-192.png
+          net.unraid.docker.shell: fish
+        restart: unless-stopped
+        volumes: &devcontainer_services_common_volumes
+          - *volumes_docker-socket # For Docker-out-of-Docker
+
+networks:
+  devcontainer-mathewrumsey_dev.access:
+    name: devcontainer-mathewrumsey_dev.access
+    ###
+    attachable: false
+    driver: bridge
+    internal: false
+
+services:
+  devcontainer-mathewrumsey_dev:
+    <<: *devcontainer_services_common
+    container_name: &instances_mathewrumsey-dev_name devcontainer-mathewrumsey_dev
+    hostname: *instances_mathewrumsey-dev_name
+    ###
+    depends_on:
+      devcontainer-mathewrumsey_dev-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    environment:
+      <<: *devcontainer_services_common_environment
+      TUNNEL_NAME: mathewrumsey-dev
+    labels:
+      <<: *devcontainer_services_common_labels
+      # Unraid
+      net.unraid.docker.webui: https://vscode.dev/tunnel/mathewrumsey-dev/workspaces/mathewrumsey.dev
+    networks:
+      devcontainer-mathewrumsey_dev.access:
+    volumes:
+      - <<: *volumes_docker-socket
+      - # Home directory for persistence of tunnel state, configs, etc.
+        source: devcontainer-mathewrumsey_dev.data
+        target: /home/codespace
+        type: volume
+        volume:
+          nocopy: false
+          subpath: home
+      - # Project directory; It's important that the source/target paths match in order to avoid DooD path inconsistency issues with bind mounts
+        bind:
+          create_host_path: false
+        source: *host_paths_project
+        target: *host_paths_project
+        type: bind
+    working_dir: *host_paths_project
+
+  devcontainer-mathewrumsey_dev-setup:
+    <<: *devcontainer_services_common
+    container_name: mathewrumsey_dev-setup
+    ###
+    command:
+      - -exuo
+      - pipefail
+      - -c
+      - |2
+        # Configure data volume
+        mkdir --parents /mnt/data/home
+        chown ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?} /mnt/data
+        chown ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?} /mnt/data/home
+    entrypoint: sh
+    labels:
+      <<: *devcontainer_services_common_labels
+      dev.mathewrumsey.grafana.instance: none
+    network_mode: none
+    restart: on-failure:1
+    user: root
+    volumes:
+      - # Data volume
+        source: devcontainer-mathewrumsey_dev.data
+        target: /mnt/data
+        type: volume
+        volume:
+          nocopy: true
+
+volumes:
+  devcontainer-mathewrumsey_dev.data:
+    name: devcontainer-mathewrumsey_dev.data
