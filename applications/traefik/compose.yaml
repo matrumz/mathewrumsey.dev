@@ -136,6 +136,7 @@ services:
         aliases:
           - proxy.${MATHEWRUMSEY_DEV_DOMAIN__APEX} # Provides a clean way to hot-swap proxy services with Cloudflare Tunnel
       grafana.access:
+      filebrowser-ttrpg.access:
       pihole.access:
     ports:
       - app_protocol: http

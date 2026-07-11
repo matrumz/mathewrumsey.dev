@@ -1,5 +1,6 @@
 include:
   - path: [applications/cloudflared/compose.yaml, applications/cloudflared/compose.override.yaml]
+  - path: [applications/filebrowser/compose.yaml, applications/filebrowser/compose.override.yaml]
   - path: [applications/grafana/compose.yaml, applications/grafana/compose.override.yaml]
   - path: [applications/mariadb/compose.yaml, applications/mariadb/compose.override.yaml]
   - path: [applications/nordvpn/compose.yaml, applications/nordvpn/compose.override.yaml]

@@ -1,0 +1,8 @@
+{
+	"address": "",
+	"baseURL": "/ttrpg",
+	"database": "/mnt/filebrowser/etc/database.db",
+	"log": "stdout",
+	"port": 80,
+	"root": "/mnt/filebrowser/srv"
+}
