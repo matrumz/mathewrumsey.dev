@@ -43,7 +43,9 @@ services:
     container_name: mariadb-v10
     image: mariadb:10
     ###
-    networks: {}
+    networks:
+      photoprism-ttrpg.internal:
+      photoprism-xkcd.internal:
     volumes:
       # Main data volume
       - bind:

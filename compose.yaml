@@ -5,5 +5,6 @@ include:
   - path: [applications/grafana/compose.yaml, applications/grafana/compose.override.yaml]
   - path: [applications/mariadb/compose.yaml, applications/mariadb/compose.override.yaml]
   - path: [applications/nordvpn/compose.yaml, applications/nordvpn/compose.override.yaml]
+  - path: [applications/photoprism/compose.yaml, applications/photoprism/compose.override.yaml]
   - path: [applications/pihole/compose.yaml, applications/pihole/compose.override.yaml]
   - path: [applications/traefik/compose.yaml, applications/traefik/compose.override.yaml]

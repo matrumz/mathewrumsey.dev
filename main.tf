@@ -74,6 +74,7 @@ module "cloudflared" {
   application_configs = concat(
     module.filebrowser.tunnel_configs,
     module.grafana.tunnel_configs,
+    module.photoprism.tunnel_configs,
     module.pihole.tunnel_configs,
     module.traefik.tunnel_configs,
   )
@@ -87,6 +88,13 @@ module "cloudflared" {
 
 module "filebrowser" {
   source                   = "./applications/filebrowser"
+  apex_domain              = local.domain
+  cloudflare_access_policy = cloudflare_zero_trust_access_policy.bypass_everyone.id
+  cloudflare_zone          = cloudflare_zone.this.id
+}
+
+module "photoprism" {
+  source                   = "./applications/photoprism"
   apex_domain              = local.domain
   cloudflare_access_policy = cloudflare_zero_trust_access_policy.bypass_everyone.id
   cloudflare_zone          = cloudflare_zone.this.id

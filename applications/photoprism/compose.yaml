@@ -1,0 +1,460 @@
+# Original template: https://dl.photoprism.app/docker/docker-compose.yml
+# Getting started: https://docs.photoprism.app/getting-started/docker-compose/
+# Configuration options: https://docs.photoprism.app/getting-started/config-options/
+# Security: https://docs.photoprism.app/getting-started/advanced/docker-security/
+
+x-ref:
+  domain:
+    apex: &domain_apex ${MATHEWRUMSEY_DEV_DOMAIN__APEX:?}
+
+  host:
+    tz: &host_tz ${MATHEWRUMSEY_DEV_HOST__TZ:-America/New_York}
+    users:
+      default:
+        gid: &host_users_default_gid ${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?}
+        uid: &host_users_default_uid ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}
+        ugid: &host_users_default_ugid ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?}
+    paths:
+      ttrpg-images: &host_paths_ttrpg-images ../../content/ttrpg/images
+      xkcd-images: &host_paths_xkcd-images ../../content/xkcd-scrape
+
+  databases:
+    photoprism-ttrpg:
+      driver: &databases_photoprism-ttrpg_driver mysql
+      name: &databases_photoprism-ttrpg_name photoprism_ttrpg
+      server: &databases_photoprism-ttrpg_server mariadb-v10
+      user: &databases_photoprism-ttrpg_user photoprism_ttrpg
+    photoprism-xkcd:
+      driver: &databases_photoprism-xkcd_driver mysql
+      name: &databases_photoprism-xkcd_name photoprism_xkcd
+      server: &databases_photoprism-xkcd_server mariadb-v10
+      user: &databases_photoprism-xkcd_user photoprism_xkcd
+
+  photoprism:
+    paths:
+      content: &photoprism_paths_content /photoprism/originals
+      data: &photoprism_paths_data /photoprism/storage
+    services:
+      common: &photoprism_services_common
+        image: photoprism/photoprism:latest
+        ###
+        depends_on: &photoprism_services_common_depends-on
+          mariadb-v10:
+            condition: service_healthy
+            required: true
+            restart: true
+        # deploy:
+        #   resources:
+        #     reservations:
+        #       devices:
+        #         - driver: nvidia
+        #           count: all
+        #           capabilities:
+        #             - gpu
+        environment:
+          # PHOTOPRISM_ADMIN_USER:                       # admin login username -- Needs to be set in secret compose file
+          # PHOTOPRISM_ADMIN_PASSWORD:                   # initial admin password (8-72 characters) -- Needs to be set in secret compose file
+          &photoprism_services_common_environment
+          PHOTOPRISM_AUTH_MODE: "password" # authentication mode (public, password)
+          # PHOTOPRISM_SITE_URL:                         # server URL in the format "http(s)://domain.name(:port)/(path)"
+          PHOTOPRISM_DISABLE_TLS: "true" # disables HTTPS/TLS even if the site URL starts with https:// and a certificate is available
+          PHOTOPRISM_DEFAULT_TLS: "false" # defaults to a self-signed HTTPS/TLS certificate if no other certificate is available
+          PHOTOPRISM_ORIGINALS_LIMIT: 5000 # file size limit for originals in MB (increase for high-res video)
+          PHOTOPRISM_HTTP_COMPRESSION: "gzip" # improves transfer speed and bandwidth utilization (none or gzip)
+          PHOTOPRISM_LOG_LEVEL: "info" # log level: trace, debug, info, warning, error, fatal, or panic
+          PHOTOPRISM_READONLY: "false" # do not modify originals directory (reduced functionality)
+          PHOTOPRISM_EXPERIMENTAL: "false" # enables experimental features
+          PHOTOPRISM_DISABLE_CHOWN: "false" # disables updating storage permissions via chmod and chown on startup
+          PHOTOPRISM_DISABLE_WEBDAV: "true" # disables built-in WebDAV server
+          PHOTOPRISM_DISABLE_SETTINGS: "false" # disables settings UI and API
+          PHOTOPRISM_DISABLE_RESTART: "true"
+          PHOTOPRISM_DISABLE_TENSORFLOW: "true" # disables all features depending on TensorFlow
+          PHOTOPRISM_DISABLE_FACES: "true" # disables face detection and recognition (requires TensorFlow)
+          PHOTOPRISM_DISABLE_CLASSIFICATION: "true" # disables image classification (requires TensorFlow)
+          PHOTOPRISM_DISABLE_VECTORS: "false" # disables vector graphics support
+          PHOTOPRISM_DISABLE_RAW: "false" # disables indexing and conversion of RAW images
+          PHOTOPRISM_RAW_PRESETS: "false" # enables applying user presets when converting RAW images (reduces performance)
+          PHOTOPRISM_SIDECAR_YAML: "true" # creates YAML sidecar files to back up picture metadata
+          PHOTOPRISM_BACKUP_ALBUMS: "true" # creates YAML files to back up album metadata
+          PHOTOPRISM_BACKUP_DATABASE: "true" # creates regular backups based on the configured schedule
+          PHOTOPRISM_BACKUP_SCHEDULE: "daily" # backup SCHEDULE in cron format (e.g. "0 12 * * *" for daily at noon) or at a random time (daily, weekly)
+          PHOTOPRISM_INDEX_SCHEDULE: "0 * * * *" # indexing SCHEDULE in cron format (e.g. "@every 3h" for every 3 hours; "" to disable)
+          PHOTOPRISM_AUTO_INDEX: 300 # delay before automatically indexing files in SECONDS when uploading via WebDAV (-1 to disable)
+          PHOTOPRISM_AUTO_IMPORT: -1 # delay before automatically importing files in SECONDS when uploading via WebDAV (-1 to disable)
+          PHOTOPRISM_DETECT_NSFW: "false" # automatically flags photos as private that MAY be offensive (requires TensorFlow)
+          PHOTOPRISM_UPLOAD_NSFW: "true" # allows uploads that MAY be offensive (no effect without TensorFlow)
+          PHOTOPRISM_DATABASE_DRIVER: "sqlite" # SQLite is an embedded database that does not require a separate database server
+          # PHOTOPRISM_DATABASE_SERVER:                  # MariaDB database server (hostname:port)
+          # PHOTOPRISM_DATABASE_NAME:                    # MariaDB database schema name
+          # PHOTOPRISM_DATABASE_USER:                    # MariaDB database user name
+          # PHOTOPRISM_DATABASE_PASSWORD:                # MariaDB database user password
+          # PHOTOPRISM_SITE_CAPTION:
+          # PHOTOPRISM_SITE_DESCRIPTION:                 # meta site description
+          PHOTOPRISM_SITE_AUTHOR: "matrumz" # meta site author
+          PHOTOPRISM_DEFAULT_TIMEZONE: *host_tz
+          TZ: *host_tz
+          ## Video Transcoding (https://docs.photoprism.app/getting-started/advanced/transcoding/):
+          # PHOTOPRISM_FFMPEG_ENCODER: "nvidia" # H.264/AVC encoder (software, intel, nvidia, apple, raspberry, or vaapi)
+          # PHOTOPRISM_FFMPEG_SIZE: "1920"               # video size limit in pixels (720-7680) (default: 3840)
+          # PHOTOPRISM_FFMPEG_BITRATE: "32"              # video bitrate limit in Mbit/s (default: 50)
+          ## Run/install on first startup (options: update https gpu ffmpeg tensorflow davfs clitools clean):
+          # PHOTOPRISM_INIT: "ffmpeg gpu tensorflow"
+          ## Run as a non-root user after initialization (supported: 0, 33, 50-99, 500-600, and 900-1200):
+          PHOTOPRISM_UID: *host_users_default_uid
+          PHOTOPRISM_GID: *host_users_default_gid
+          # PHOTOPRISM_UMASK:                            # file-creation mode (default: u=rwx,g=rwx,o=rx)
+        labels: &photoprism_services_common_labels
+          # Grafana
+          dev.mathewrumsey.grafana.instance: default
+          # Traefik
+          dev.mathewrumsey.traefik.instance: ingress
+          traefik.enable: "true"
+          # Unraid
+          net.unraid.docker.icon: https://raw.githubusercontent.com/photoprism/photoprism/refs/heads/release/assets/static/icons/logo/100.png
+          net.unraid.docker.shell: bash
+        pull_policy: always
+        restart: unless-stopped
+        stop_grace_period: 10s
+        ## Start as non-root user before initialization (supported: 0, 33, 50-99, 500-600, and 900-1200):
+        user: *host_users_default_ugid
+        working_dir: "/photoprism" # do not change or remove
+
+      setup-common: &photoprism_services_setup-common
+        image: mariadb:10
+        ###
+        command:
+          - -exo
+          - pipefail
+          - -c
+          - |
+            # Validate environment variables and read secrets
+            INVALID_ARGUMENTS=()
+            if [[ -z "$$DATABASE_SERVER" ]]; then
+              INVALID_ARGUMENTS+=("DATABASE_SERVER")
+            fi
+            if [[ -z "$$DATABASE_NAME" ]]; then
+              INVALID_ARGUMENTS+=("DATABASE_NAME")
+            fi
+            if [[ -z "$$DATABASE_USER" ]]; then
+              INVALID_ARGUMENTS+=("DATABASE_USER")
+            fi
+            if [[ -z "$$DATABASE_PASSWORD" ]]; then
+              if [[ -f "$$DATABASE_PASSWORD_FILE" ]]; then
+                DATABASE_PASSWORD="$$(cat "$$DATABASE_PASSWORD_FILE")"
+              else
+                INVALID_ARGUMENTS+=("DATABASE_PASSWORD|DATABASE_PASSWORD_FILE")
+              fi
+            fi
+            if [[ -z "$$DATABASE_ROOT_PASSWORD" ]]; then
+              if [[ -f "$$DATABASE_ROOT_PASSWORD_FILE" ]]; then
+                DATABASE_ROOT_PASSWORD="$$(cat "$$DATABASE_ROOT_PASSWORD_FILE")"
+              else
+                INVALID_ARGUMENTS+=("DATABASE_ROOT_PASSWORD|DATABASE_ROOT_PASSWORD_FILE")
+              fi
+            fi
+            if [[ "$${#INVALID_ARGUMENTS[@]}" -gt 0 ]]; then
+              echo "Invalid arguments: $${INVALID_ARGUMENTS[*]}"
+              exit 1
+            fi
+            # Create configuration file to simplify future commands
+            cat << EOF > ~/.my.cnf
+            [client]
+            host = $$DATABASE_SERVER
+            user = root
+            password = $$DATABASE_ROOT_PASSWORD
+            EOF
+            # Create database and user
+            mariadb << EOF
+            CREATE DATABASE IF NOT EXISTS $$DATABASE_NAME;
+            CREATE USER IF NOT EXISTS '$$DATABASE_USER'@'%' IDENTIFIED BY '$$DATABASE_PASSWORD';
+            GRANT ALL PRIVILEGES ON $$DATABASE_NAME.* TO '$$DATABASE_USER'@'%';
+            FLUSH PRIVILEGES;
+            EOF
+            # Write secrets files to photoprism's options.yml file
+            mkdir -p /photoprism/storage/config
+            cat << EOF > /photoprism/storage/config/options.yml
+            AdminPassword: $$(cat /run/secrets/admin_password | tr -d '\n')
+            AdminUser: $$(cat /run/secrets/admin_user | tr -d '\n')
+            DatabasePassword: $$DATABASE_PASSWORD
+            EOF
+            # Fix permissions of auto-created data-dir
+            chown -R ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?} /photoprism/storage
+            # Run any additional executables mounted to /setup-init.d/ (e.g. for custom configuration or seeding)
+            if [[ -d "/setup-init.d/" ]]; then
+              for f in /setup-init.d/*; do
+                if [[ -x "$$f" ]]; then
+                  echo "Running setup script: $$f"
+                  "$$f"
+                else
+                  echo "Skipping non-executable setup file: $$f"
+                fi
+              done
+            fi
+        depends_on:
+          mariadb-v10:
+            condition: service_healthy
+            required: true
+            restart: true
+        entrypoint: bash
+        environment: &photoprism_services_setup-common_environment
+          DATABASE_ROOT_PASSWORD_FILE: /run/secrets/mariadb_root_password
+          ## Put in instances
+          # DATABASE_NAME:
+          # DATABASE_PASSWORD: or DATABASE_PASSWORD_FILE:
+          # DATABASE_SERVER:
+          # DATABASE_USER:
+        restart: "no"
+        secrets:
+          - &photoprism_services_setup-common_secrets_mariadb_root_password
+            source: mariadb.root_password
+            target: mariadb_root_password
+        user: root
+
+networks:
+  photoprism-ttrpg.ingress:
+    name: photoprism-ttrpg.ingress
+    ###
+    attachable: true
+    driver: bridge
+    internal: true
+  photoprism-ttrpg.internal:
+    name: photoprism-ttrpg.internal
+    ###
+    attachable: true
+    driver: bridge
+    internal: true
+
+  photoprism-xkcd.ingress:
+    name: photoprism-xkcd.ingress
+    ###
+    attachable: true
+    driver: bridge
+    internal: true
+  photoprism-xkcd.internal:
+    name: photoprism-xkcd.internal
+    ###
+    attachable: true
+    driver: bridge
+    internal: true
+
+configs:
+  photoprism.seed-demo:
+    name: photoprism.seed-demo
+    ###
+    content: |
+      #!/usr/bin/env bash
+      set -exuo pipefail
+      # Seed files from sample content
+      cp --recursive --no-clobber /mnt/seed/* /photoprism/originals/
+      chown -R ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?} /photoprism/originals/
+
+secrets:
+  photoprism-ttrpg.admin_password:
+    name: photoprism-ttrpg.admin_password
+    ###
+    file: secrets/photoprism-ttrpg/admin_password.txt
+  photoprism-ttrpg.admin_user:
+    name: photoprism-ttrpg.admin_user
+    ###
+    file: secrets/photoprism-ttrpg/admin_user.txt
+  photoprism-ttrpg.database_password:
+    name: photoprism-ttrpg.database_password
+    ###
+    file: secrets/photoprism-ttrpg/database_password.txt
+
+  photoprism-xkcd.admin_password:
+    name: photoprism-xkcd.admin_password
+    ###
+    file: secrets/photoprism-xkcd/admin_password.txt
+  photoprism-xkcd.admin_user:
+    name: photoprism-xkcd.admin_user
+    ###
+    file: secrets/photoprism-xkcd/admin_user.txt
+  photoprism-xkcd.database_password:
+    name: photoprism-xkcd.database_password
+    ###
+    file: secrets/photoprism-xkcd/database_password.txt
+
+services:
+  photoprism-ttrpg:
+    <<: *photoprism_services_common
+    container_name: photoprism-ttrpg
+    ###
+    depends_on:
+      <<: *photoprism_services_common_depends-on
+      photoprism-ttrpg-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    environment:
+      <<: *photoprism_services_common_environment
+      PHOTOPRISM_DATABASE_DRIVER: *databases_photoprism-ttrpg_driver
+      PHOTOPRISM_DATABASE_SERVER: *databases_photoprism-ttrpg_server
+      PHOTOPRISM_DATABASE_NAME: *databases_photoprism-ttrpg_name
+      PHOTOPRISM_DATABASE_USER: *databases_photoprism-ttrpg_user
+      PHOTOPRISM_SITE_CAPTION: "TTRPG Reference Art"
+      PHOTOPRISM_SITE_DESCRIPTION: "Tabletop RPG Reference Art"
+      PHOTOPRISM_SITE_URL: https://photoprism.${MATHEWRUMSEY_DEV_DOMAIN__APEX}/ttrpg
+    labels:
+      <<: *photoprism_services_common_labels
+      # Traefik
+      traefik.docker.network: photoprism-ttrpg.ingress
+      traefik.http.routers.photoprism-ttrpg.rule: "Host(`photoprism.${MATHEWRUMSEY_DE\
+        V_DOMAIN__APEX}`) && PathPrefix(`/ttrpg`)"
+      traefik.http.services.photoprism-ttrpg.loadBalancer.server.port: 2342
+      # Unraid
+      net.unraid.docker.webui: https://photoprism.${MATHEWRUMSEY_DEV_DOMAIN__APEX}/ttrpg
+    networks:
+      photoprism-ttrpg.ingress:
+      photoprism-ttrpg.internal:
+    volumes:
+      # Original media files
+      - source: photoprism-ttrpg.content
+        target: *photoprism_paths_content
+        type: volume
+      # Cache, database, and sidecar files
+      - bind:
+          create_host_path: true
+        source: .container-data/photoprism-ttrpg/storage
+        target: *photoprism_paths_data
+        type: bind
+
+  photoprism-ttrpg-setup:
+    <<: *photoprism_services_setup-common
+    container_name: photoprism-ttrpg-setup
+    ###
+    configs:
+      - mode: "0707"
+        source: photoprism.seed-demo
+        target: /setup-init.d/seed-demo.sh
+    environment:
+      <<: *photoprism_services_setup-common_environment
+      DATABASE_NAME: *databases_photoprism-ttrpg_name
+      DATABASE_SERVER: *databases_photoprism-ttrpg_server
+      DATABASE_USER: *databases_photoprism-ttrpg_user
+      DATABASE_PASSWORD_FILE: /run/secrets/database_password
+    networks:
+      photoprism-ttrpg.internal:
+    secrets:
+      - <<: *photoprism_services_setup-common_secrets_mariadb_root_password
+      - source: photoprism-ttrpg.admin_password
+        target: admin_password
+      - source: photoprism-ttrpg.admin_user
+        target: admin_user
+      - source: photoprism-ttrpg.database_password
+        target: database_password
+    volumes:
+      # Original media files
+      - source: photoprism-ttrpg.content
+        target: *photoprism_paths_content
+        type: volume
+      # Cache, database, and sidecar files
+      - bind:
+          create_host_path: true
+        source: .container-data/photoprism-ttrpg/storage
+        target: *photoprism_paths_data
+        type: bind
+      # Seed content
+      - bind:
+          create_host_path: false
+        source: *host_paths_ttrpg-images
+        target: /mnt/seed
+        type: bind
+
+  photoprism-xkcd:
+    <<: *photoprism_services_common
+    container_name: photoprism-xkcd
+    ###
+    depends_on:
+      <<: *photoprism_services_common_depends-on
+      photoprism-xkcd-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    environment:
+      <<: *photoprism_services_common_environment
+      PHOTOPRISM_DATABASE_DRIVER: *databases_photoprism-xkcd_driver
+      PHOTOPRISM_DATABASE_NAME: *databases_photoprism-xkcd_name
+      PHOTOPRISM_DATABASE_SERVER: *databases_photoprism-xkcd_server
+      PHOTOPRISM_DATABASE_USER: *databases_photoprism-xkcd_user
+      PHOTOPRISM_SITE_CAPTION: "xkcd"
+      PHOTOPRISM_SITE_DESCRIPTION: "xkcd art"
+      PHOTOPRISM_SITE_URL: https://photoprism.${MATHEWRUMSEY_DEV_DOMAIN__APEX}/xkcd
+      # Needs to be set in secret compose file
+      # - PHOTOPRISM_ADMIN_PASSWORD:
+      # - PHOTOPRISM_ADMIN_USER:
+      # - PHOTOPRISM_DATABASE_PASSWORD:
+    labels:
+      <<: *photoprism_services_common_labels
+      # Traefik
+      traefik.docker.network: photoprism-xkcd.ingress
+      traefik.http.routers.photoprism-xkcd.rule: "Host(`photoprism.${MATHEWRUMSEY_DEV\
+        _DOMAIN__APEX}`) && PathPrefix(`/xkcd`)"
+      traefik.http.services.photoprism-xkcd.loadBalancer.server.port: 2342
+      # Unraid
+      net.unraid.docker.webui: https://photoprism.${MATHEWRUMSEY_DEV_DOMAIN__APEX}/xkcd
+    networks:
+      photoprism-xkcd.ingress:
+      photoprism-xkcd.internal:
+    volumes:
+      # Original media files
+      - source: photoprism-xkcd.content
+        target: *photoprism_paths_content
+        type: volume
+      # Cache, database, and sidecar files
+      - bind:
+          create_host_path: true
+        source: .container-data/photoprism-xkcd/storage
+        target: *photoprism_paths_data
+        type: bind
+
+  photoprism-xkcd-setup:
+    <<: *photoprism_services_setup-common
+    container_name: photoprism-xkcd-setup
+    ###
+    configs:
+      - mode: "0707"
+        source: photoprism.seed-demo
+        target: /setup-init.d/seed-demo.sh
+    environment:
+      <<: *photoprism_services_setup-common_environment
+      DATABASE_NAME: *databases_photoprism-xkcd_name
+      DATABASE_PASSWORD_FILE: /run/secrets/database_password
+      DATABASE_SERVER: *databases_photoprism-xkcd_server
+      DATABASE_USER: *databases_photoprism-xkcd_user
+    networks:
+      photoprism-xkcd.internal:
+    secrets:
+      - <<: *photoprism_services_setup-common_secrets_mariadb_root_password
+      - source: photoprism-xkcd.admin_password
+        target: admin_password
+      - source: photoprism-xkcd.admin_user
+        target: admin_user
+      - source: photoprism-xkcd.database_password
+        target: database_password
+    volumes:
+      # Original media files
+      - source: photoprism-xkcd.content
+        target: *photoprism_paths_content
+        type: volume
+      # Cache, database, and sidecar files
+      - bind:
+          create_host_path: true
+        source: .container-data/photoprism-xkcd/storage
+        target: *photoprism_paths_data
+        type: bind
+      # Seed content
+      - bind:
+          create_host_path: false
+        source: *host_paths_xkcd-images
+        target: /mnt/seed
+        type: bind
+
+volumes:
+  # You would typically have this content in a host directory that you bind mount to the container, but using a volume here to simplify the demo process
+  photoprism-ttrpg.content:
+    name: photoprism-ttrpg.content
+
+  # You would typically have this content in a host directory that you bind mount to the container, but using a volume here to simplify the demo process
+  photoprism-xkcd.content:
+    name: photoprism-xkcd.content
