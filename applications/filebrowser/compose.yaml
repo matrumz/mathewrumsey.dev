@@ -1,0 +1,161 @@
+x-ref:
+  host:
+    paths:
+      ttrpg: &host_paths_ttrpg ../../content/ttrpg
+    tz: &host_tz ${MATHEWRUMSEY_DEV_HOST__TZ:-America/New_York}
+    users:
+      default:
+        gid: &host_users_default_gid ${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?}
+        uid: &host_users_default_uid ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}
+        ugid: &host_users_default_ugid ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?}
+
+  filebrowser:
+    services:
+      common: &filebrowser_services_common
+        image: filebrowser/filebrowser:v2
+        ###
+        command:
+          - --config
+          - &filebrowser_services_common_config_path /etc/filebrowser/.filebrowser.json # default path for CLI, yet webapp wants to use /config/settings.json: https://filebrowser.org/cli/filebrowser.html
+        environment: &filebrowser_services_common_environment
+          TZ: *host_tz
+        labels: &filebrowser_services_common_labels
+          net.unraid.docker.icon: https://raw.githubusercontent.com/filebrowser/filebrowser/refs/heads/master/frontend/public/img/icons/mstile-144x144.png
+          net.unraid.docker.shell: sh
+        restart: unless-stopped
+        user: *host_users_default_ugid
+
+networks:
+  filebrowser-ttrpg.access:
+    name: filebrowser-ttrpg.access
+    ###
+    attachable: true
+    driver: bridge
+    internal: false
+
+secrets:
+  filebrowser-ttrpg.users:
+    name: filebrowser-ttrpg.users
+    ###
+    file: ./secrets/filebrowser-ttrpg/users.yaml
+
+services:
+  filebrowser-ttrpg: &instances_filebrowser-ttrpg
+    <<: *filebrowser_services_common
+    container_name: filebrowser-ttrpg
+    ###
+    depends_on:
+      filebrowser-ttrpg-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    labels:
+      <<: *filebrowser_services_common_labels
+      # Grafana
+      dev.mathewrumsey.grafana.instance: default
+      # Traefik
+      dev.mathewrumsey.traefik.instance: ingress
+      traefik.docker.network: filebrowser-ttrpg.access
+      traefik.enable: "true"
+      traefik.http.routers.filebrowser-ttrpg.rule: Host(`filebrowser.${MATHEWRUMSEY_DEV_DOMAIN__APEX:?}`) && PathPrefix(`/ttrpg`)
+      traefik.http.services.filebrowser-ttrpg.loadBalancer.server.port: 80
+      # Unraid
+      net.unraid.docker.webui: https://filebrowser.${MATHEWRUMSEY_DEV_DOMAIN__APEX}/ttrpg
+    networks:
+      filebrowser-ttrpg.access:
+    volumes:
+      # Filebrowser database
+      - bind:
+          create_host_path: true
+        source: .container-data/filebrowser-ttrpg/etc
+        target: /mnt/filebrowser/etc
+        type: bind
+      # Filebrowser configuration
+      - bind:
+          create_host_path: false
+        source: container-data/filebrowser-ttrpg/filebrowser.json
+        target: *filebrowser_services_common_config_path
+        type: bind
+      # Branding
+      - bind:
+          create_host_path: false
+        source: container-data/filebrowser-ttrpg/branding
+        target: /mnt/filebrowser/branding
+        type: bind
+      # Served files
+      - source: filebrowser-ttrpg.content
+        target: /mnt/filebrowser/srv
+        type: volume
+
+  filebrowser-ttrpg-setup:
+    <<: *instances_filebrowser-ttrpg
+    container_name: filebrowser-ttrpg-setup
+    ###
+    command:
+      - -exuo
+      - pipefail
+      - -c
+      - |
+        # Initialize filebrowser database (if not already initialized) & other 1-time setup
+        if [ ! -f /mnt/filebrowser/etc/database.db ]; then
+          filebrowser config init
+          filebrowser users import /run/secrets/users.yaml
+        fi
+        # Set config
+        filebrowser config set \
+          --branding.files /mnt/filebrowser/branding \
+          --branding.name "TTRPG Files"
+        # Copy demo content
+        rm -rf /mnt/filebrowser/srv/*
+        cp -rf /mnt/filebrowser/demo-content/* /mnt/filebrowser/srv/
+        # Set permissions
+        chown -R ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?} /mnt/filebrowser /mnt/filebrowser/srv
+    depends_on: []
+    entrypoint: sh
+    labels:
+      <<: *filebrowser_services_common_labels
+      # Traefik
+      traefik.enable: "false"
+      # Unraid
+      net.unraid.docker.webui:
+    network_mode: none
+    networks: {}
+    restart: on-failure:1
+    secrets:
+      - source: filebrowser-ttrpg.users
+        target: users.yaml
+    user: root
+    volumes:
+      # Filebrowser database
+      - bind:
+          create_host_path: true
+        source: .container-data/filebrowser-ttrpg/etc
+        target: /mnt/filebrowser/etc
+        type: bind
+      # Filebrowser configuration
+      - bind:
+          create_host_path: false
+        source: container-data/filebrowser-ttrpg/filebrowser.json
+        target: *filebrowser_services_common_config_path
+        type: bind
+      # Branding
+      - bind:
+          create_host_path: false
+        source: container-data/filebrowser-ttrpg/branding
+        target: /mnt/filebrowser/branding
+        type: bind
+      # Served files
+      - source: filebrowser-ttrpg.content
+        target: /mnt/filebrowser/srv
+        type: volume
+      # Demo content
+      - bind:
+          create_host_path: false
+        source: *host_paths_ttrpg
+        target: /mnt/filebrowser/demo-content
+        type: bind
+
+volumes:
+  # You would typically have this content in a host directory that you bind mount to the container, but using a volume here to simplify the demo process
+  filebrowser-ttrpg.content:
+    name: filebrowser-ttrpg.content

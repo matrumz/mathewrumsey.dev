@@ -72,6 +72,7 @@ resource "cloudflare_zone_setting" "ssl" {
 module "cloudflared" {
   source = "./applications/cloudflared"
   application_configs = concat(
+    module.filebrowser.tunnel_configs,
     module.grafana.tunnel_configs,
     module.pihole.tunnel_configs,
     module.traefik.tunnel_configs,
@@ -82,6 +83,13 @@ module "cloudflared" {
     "*.${local.domain}", # preemptively reserve wildcard subdomain to avoid downtime when adding subdomains in the future
   ]
   proxy_service = module.traefik.proxy_service
+}
+
+module "filebrowser" {
+  source                   = "./applications/filebrowser"
+  apex_domain              = local.domain
+  cloudflare_access_policy = cloudflare_zero_trust_access_policy.bypass_everyone.id
+  cloudflare_zone          = cloudflare_zone.this.id
 }
 
 module "grafana" {
