@@ -1,0 +1,145 @@
+x-ref:
+  host:
+    tz: &host_tz ${MATHEWRUMSEY_DEV_HOST__TZ:-America/New_York}
+
+networks:
+  pihole.access:
+    name: pihole.access
+    ###
+    attachable: true
+    driver: bridge
+    internal: false
+
+secrets:
+  pihole.webpassword:
+    name: pihole.webpassword
+    ###
+    file: secrets/webpassword.txt
+
+services:
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:2026.04.0
+    ###
+    cap_add:
+      - NET_ADMIN
+      - SYS_NICE
+      - SYS_TIME
+    depends_on:
+      pihole-setup:
+        condition: service_completed_successfully
+        required: false
+        restart: false
+    environment:
+      FTLCONF_dns_listeningMode: all
+      TZ: *host_tz
+      WEBPASSWORD_FILE: webpassword
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test:
+        [
+          "CMD",
+          "dig",
+          "+short",
+          "+norecurse",
+          "+retry=0",
+          "@127.0.0.1",
+          "pi.hole",
+        ]
+      timeout: 10s
+    labels:
+      # Grafana
+      dev.mathewrumsey.grafana.instance: default
+      # Traefik
+      dev.mathewrumsey.traefik.instance: ingress
+      traefik.docker.network: pihole.access
+      traefik.enable: "true"
+      traefik.http.services.pihole.loadBalancer.server.port: 80
+      # Unraid
+      net.unraid.docker.icon: https://www.gravatar.com/avatar/7119e1e3c13a1cf50843f3d89d5e0f33
+      net.unraid.docker.shell: bash
+      net.unraid.docker.webui: https://pihole.${MATHEWRUMSEY_DEV_DOMAIN__APEX}/admin
+    networks:
+      pihole.access:
+    ports:
+      - mode: host
+        protocol: tcp
+        published: 53
+        target: 53
+      - mode: host
+        protocol: udp
+        published: 53
+        target: 53
+    restart: unless-stopped
+    secrets:
+      - source: pihole.webpassword
+        target: webpassword
+    volumes:
+      # Pi-hole configuration
+      - bind:
+          create_host_path: true
+        source: .container-data/pihole/etc-pihole
+        target: /etc/pihole
+        type: bind
+      # dnsmasq configuration
+      - bind:
+          create_host_path: true
+        source: .container-data/pihole/etc-dnsmasq.d
+        target: /etc/dnsmasq.d
+        type: bind
+
+  pihole-setup:
+    container_name: pihole-setup
+    image: busybox:1
+    ###
+    command:
+      - -exuo
+      - pipefail
+      - -c
+      - |
+        mkdir --parents \
+          /mnt/.container-data/pihole/etc-pihole \
+          /mnt/.container-data/pihole/etc-dnsmasq.d
+        # Set ownership to default Pi-hole UID/GID
+        chown -R 1000:1000 /mnt/.container-data
+        # Giving all read permissions so they can be inspected on the host if needed
+        chmod -R a+r /mnt/.container-data
+    entrypoint: sh
+    network_mode: none
+    restart: "no"
+    volumes:
+      - bind:
+          create_host_path: true
+        source: .container-data
+        target: /mnt/.container-data
+        type: bind
+
+  pihole-dns-test:
+    # Sample service for making DNS queries to generate data on the Pi-hole dashboard and confirm it's working correctly.
+    container_name: pihole-dns-test
+    image: busybox:1
+    ###
+    # Runs DNS lookups through Pi-hole: legitimate domains that should resolve, and known ad/tracking domains that should be blocked.
+    command:
+      - sh
+      - -c
+      - |
+        echo "=== Allowed domains ==="
+        nslookup google.com pihole
+        nslookup github.com pihole
+        nslookup wikipedia.org pihole
+        echo "=== Blocked domains (expect 0.0.0.0 or NXDOMAIN) ==="
+        nslookup ads.google.com pihole
+        nslookup tracking.epicgames.com pihole
+        nslookup graph.facebook.com pihole
+        echo "=== Done ==="
+    depends_on:
+      pihole:
+        condition: service_healthy
+        required: false
+        restart: true
+    networks:
+      pihole.access:
+    restart: "no"

@@ -73,6 +73,7 @@ module "cloudflared" {
   source = "./applications/cloudflared"
   application_configs = concat(
     module.grafana.tunnel_configs,
+    module.pihole.tunnel_configs,
     module.traefik.tunnel_configs,
   )
   cloudflare_zone = cloudflare_zone.this
@@ -89,6 +90,13 @@ module "grafana" {
   cloudflare_access_policy = cloudflare_zero_trust_access_policy.allow_me_us.id
   cloudflare_idp           = cloudflare_zero_trust_access_identity_provider.google.id
   cloudflare_team_name     = local.cloudflare_team_name
+  cloudflare_zone          = cloudflare_zone.this.id
+}
+
+module "pihole" {
+  source                   = "./applications/pihole"
+  apex_domain              = local.domain
+  cloudflare_access_policy = cloudflare_zero_trust_access_policy.bypass_everyone.id
   cloudflare_zone          = cloudflare_zone.this.id
 }
 
