@@ -137,6 +137,8 @@ services:
           - proxy.${MATHEWRUMSEY_DEV_DOMAIN__APEX} # Provides a clean way to hot-swap proxy services with Cloudflare Tunnel
       grafana.access:
       filebrowser-ttrpg.access:
+      photoprism-ttrpg.ingress:
+      photoprism-xkcd.ingress:
       pihole.access:
     ports:
       - app_protocol: http
