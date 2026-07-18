@@ -34,11 +34,16 @@ Attendees of the Hack Portland meetup group, on multiple occasions, have asked m
 - **Cloud services**
 	- [Cloudflare R2](https://developers.cloudflare.com/r2/) for centralized, no-cost cloud storage of Terraform state
 	- [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/) for protected access to self-hosted services and domain portability
-	<br> <!-- TODO: disclaimer about ToS and what kind of content may be served over a tunnel (no video streaming) -->
 	- [GitHub](https://github.com/about) for remote repository hosting of version-controlled files
 	- [Google Cloud Platform (GCP) OAuth Client](https://support.google.com/cloud/answer/15549257) for authentication and authorization of secured tunnel routes
 - **Self-hosted services**
-	<!-- TODO -->
+	- [Microsoft Devcontainers](https://github.com/devcontainers/images) for a secure, remote-accessible, and enriched shell and development environment for managing my IaC and configuration files
+	- [File Browser](https://filebrowser.org/) to replace cloud storage services like Google Drive, Dropbox, and OneDrive for file access and management
+	- [Grafana](https://grafana.com/) for monitoring and visualizing logs (and eventually metrics) from my homelab and self-hosted services
+	- [NordVPN](https://nordvpn.com/) for secure, encrypted, and private internet access from my homelab
+	- [Photoprism](https://photoprism.app/) to replace cloud photo storage services like Google Photos, Apple iCloud, and Amazon Photos for photo access and management
+	- [Pi-hole](https://pi-hole.net/) for network-wide ad-blocking and DNS filtering to enhance privacy and security of my home network and devices
+	- [Traefik](https://traefik.io/) for reverse proxying and TLS termination of my self-hosted services
 
 ## Getting Started
 Prerequisite steps before writing any code:
@@ -84,7 +89,8 @@ To meet the goals of
 I use Terraform to provision and manage my cloud resources. Not all cloud resources support Terraform or IaC, but I make an effort to select resources that do.
 
 Use the following articles, as well as the contents of this repository, to plan and create your Terraform configuration files.
-- <!-- TODO -->
+- https://www.terraform-best-practices.com/
+- https://registry.terraform.io/
 
 ### Manage your Domain with Cloudflare
 
@@ -161,7 +167,9 @@ In this section, I will cover:
 The idea is that you can use the theory and infrastructure examples provided to plan and create your own Compose files for the services you want to self-host.
 
 Use the following articles, as well as the contents of this repository, to plan and create your Compose files.
-- <!-- TODO -->
+- https://medium.com/@kinghuang/docker-compose-anchors-aliases-extensions-a1e4105d70bd
+- https://docs.docker.com/compose/how-tos/use-secrets/
+- https://docs.docker.com/compose/how-tos/multiple-compose-files/
 
 ### Theory: Structuring your Compose project
 
