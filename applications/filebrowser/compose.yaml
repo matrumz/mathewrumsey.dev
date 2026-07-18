@@ -57,8 +57,7 @@ services:
       dev.mathewrumsey.traefik.instance: ingress
       traefik.docker.network: filebrowser-ttrpg.access
       traefik.enable: "true"
-      traefik.http.routers.filebrowser-ttrpg.rule: Host(`filebrowser.${MATHEWRUMSEY_DEV_DOMAIN__APEX:?}`)
-        && PathPrefix(`/ttrpg`)
+      traefik.http.routers.filebrowser-ttrpg.rule: Host(`filebrowser.${MATHEWRUMSEY_DEV_DOMAIN__APEX:?}`) && PathPrefix(`/ttrpg`)
       traefik.http.services.filebrowser-ttrpg.loadBalancer.server.port: 80
       # Unraid
       net.unraid.docker.webui: https://filebrowser.${MATHEWRUMSEY_DEV_DOMAIN__APEX}/ttrpg
