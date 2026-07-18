@@ -119,6 +119,7 @@ services:
       # Unraid
       net.unraid.docker.webui:
     network_mode: none
+    networks: {}
     restart: on-failure:1
     secrets:
       - source: filebrowser-ttrpg.users
