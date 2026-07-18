@@ -96,8 +96,7 @@ services:
     container_name: mathewrumsey_dev-setup
     ###
     command:
-      - -exuo
-      - pipefail
+      - -exu # -o pipefail not available
       - -c
       - |2
         # Configure data volume
