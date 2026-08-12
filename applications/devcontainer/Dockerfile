@@ -63,6 +63,11 @@ export DEBIAN_FRONTEND=noninteractive
 
 export DEFAULT_DOCKER_GID=$(getent group docker | cut -d: -f3)
 
+# Default to the image's existing docker group when the build arg is omitted.
+if [ -z "${DOCKER_GID}" ]; then
+    DOCKER_GID="${DEFAULT_DOCKER_GID}"
+fi
+
 # If Docker GID is not default and does not exist: update GID of default docker group
 if [ "${DOCKER_GID}" != "${DEFAULT_DOCKER_GID}" ] && ! getent group "${DOCKER_GID}"; then
     groupmod --gid "${DOCKER_GID}" docker
