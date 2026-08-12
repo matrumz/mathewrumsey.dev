@@ -20,6 +20,9 @@ x-ref:
       type: bind
 
   devcontainer:
+    paths:
+      home: &devcontainer_paths_home /home/codespace
+
     services:
       common: &devcontainer_services_common
         build: &devcontainer_services_common_build
@@ -45,6 +48,20 @@ x-ref:
         restart: unless-stopped
         volumes: &devcontainer_services_common_volumes
           - *volumes_docker-socket # For Docker-out-of-Docker
+        ### Lifecycle
+        pre_start:
+          - command:
+              - -exu # -o pipefail not available
+              - -c
+              - |2
+                chown $${UID}:$${GID} "$${HOMEPATH}"
+            entrypoint: sh
+            environment:
+              GID: *host_users_default_gid
+              HOMEPATH: *devcontainer_paths_home
+              UID: *host_users_default_uid
+            user: root
+            # TODO labels
 
 networks:
   devcontainer-mathewrumsey_dev.access:
@@ -60,11 +77,6 @@ services:
     container_name: &instances_mathewrumsey-dev_name devcontainer-mathewrumsey_dev
     hostname: *instances_mathewrumsey-dev_name
     ###
-    depends_on:
-      devcontainer-mathewrumsey_dev-setup:
-        condition: service_completed_successfully
-        required: false
-        restart: false
     environment:
       <<: *devcontainer_services_common_environment
       TUNNEL_NAME: mathewrumsey-dev
@@ -77,12 +89,11 @@ services:
     volumes:
       - <<: *volumes_docker-socket
       - # Home directory for persistence of tunnel state, configs, etc.
-        source: devcontainer-mathewrumsey_dev.data
-        target: /home/codespace
+        source: devcontainer-mathewrumsey_dev.home
+        target: *devcontainer_paths_home
         type: volume
         volume:
           nocopy: false
-          subpath: home
       - # Project directory; It's important that the source/target paths match in order to avoid DooD path inconsistency issues with bind mounts
         bind:
           create_host_path: false
@@ -91,33 +102,6 @@ services:
         type: bind
     working_dir: *host_paths_project
 
-  devcontainer-mathewrumsey_dev-setup:
-    <<: *devcontainer_services_common
-    container_name: mathewrumsey_dev-setup
-    ###
-    command:
-      - -exu # -o pipefail not available
-      - -c
-      - |2
-        # Configure data volume
-        mkdir --parents /mnt/data/home
-        chown ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?} /mnt/data
-        chown ${MATHEWRUMSEY_DEV_HOST__USERS__default__UID:?}:${MATHEWRUMSEY_DEV_HOST__USERS__default__GID:?} /mnt/data/home
-    entrypoint: sh
-    labels:
-      <<: *devcontainer_services_common_labels
-      dev.mathewrumsey.grafana.instance: none
-    network_mode: none
-    restart: on-failure:1
-    user: root
-    volumes:
-      - # Data volume
-        source: devcontainer-mathewrumsey_dev.data
-        target: /mnt/data
-        type: volume
-        volume:
-          nocopy: true
-
 volumes:
-  devcontainer-mathewrumsey_dev.data:
-    name: devcontainer-mathewrumsey_dev.data
+  devcontainer-mathewrumsey_dev.home:
+    name: devcontainer-mathewrumsey_dev.home
