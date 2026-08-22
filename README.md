@@ -88,6 +88,18 @@ To meet the goals of
 
 I use Terraform to provision and manage my cloud resources. Not all cloud resources support Terraform or IaC, but I make an effort to select resources that do.
 
+In this section, I will cover:
+- Theory - how and why I structure my Terraform files to meet my goals
+- Specific resources - examples of specific cloud resources I use to securely expose my self-hosted services
+- Manual configuration - some cloud resources do not support Terraform or IaC, so I will cover the manual configuration required for those resources
+
+### Theory: Structuring your Terraform project
+*(optional: required for external accessibility)*
+
+To keep with the modular structure that will be set up with the Compose project, Terraform specific to a service should be in that service's directory. Similar to the root Compose file, the root Terraform module is the sole exception to this, as it must reference the application submodules to create the full infrastructure. To avoid also leaking service information required to configure routes into the `cloudflared` module definition, we can make use of dynamic Terraform to pass the configuration through the root module: more on this in the [Ingress](#ingress) section.
+
+This means that creating or removing a service will involve touching the root and the service's Terraform files, but maintaining a service will generally only involve touching the service's Terraform files.
+
 Use the following articles, as well as the contents of this repository, to plan and create your Terraform configuration files.
 - https://www.terraform-best-practices.com/
 - https://registry.terraform.io/
@@ -166,21 +178,143 @@ In this section, I will cover:
 
 The idea is that you can use the theory and infrastructure examples provided to plan and create your own Compose files for the services you want to self-host.
 
+### Theory: Structuring your Compose project
+
 Use the following articles, as well as the contents of this repository, to plan and create your Compose files.
 - https://medium.com/@kinghuang/docker-compose-anchors-aliases-extensions-a1e4105d70bd
 - https://docs.docker.com/compose/how-tos/use-secrets/
 - https://docs.docker.com/compose/how-tos/multiple-compose-files/
 
-### Theory: Structuring your Compose project
+#### Repository Layout
 
+The repository layout is designed to be modular and organized, with the root Compose file acting as a thin entrypoint that assembles application modules, while each application directory owns its own services, networks, secrets, and data layout. The structure allows for clear separation of concerns, easier maintenance, and better scalability as new services are added.
+
+Docker Compose's native support for "override" files allows for environment-specific configurations and host architecture differences without duplicating the entire Compose file or modifying the base configuration common to all environments and committed to version control.
+
+Utilizing override files at the root level allows you to extend this "base" Docker landscape with additional Compose projects maintained outside this repository, but from a singular `docker compose ...` entrypoint.
+
+```mermaid
+---
+config:
+  treeView:
+    showIcons: true
+    defaultIconPack: material-icon-theme
+    filenameIcons:
+      compose.yaml: docker
+      compose.override.yaml: docker
+---
+treeView-beta
+"compose.yaml"
+"compose.override.yaml"
+"applications/"
+  "app1/"
+    "compose.yaml"
+    "compose.override.yaml"
+  "app2/"
+    "compose.yaml"
+    "compose.override.yaml"
+```
+
+#### YAML Organization and Reuse
+
+Docker Compose allows for YAML anchors to promote reuse and reduce duplication in your Compose files.
+
+By defining common service configurations as reusable blocks, you can maintain consistency across services and simplify updates. The same technique can be applied to individual values as well, avoiding duplication of magic strings which reduces risk of typos and drift during updates.
+
+#### Service Lifecycle Patterns
+
+"If it's worth doing, it's worth doing all the way."
+
+A core pillar of this repository is to use IaC to concretely define and manage your self-hosted services. In this spirit, we don't want to use Compose to spin up a service, then manually configure it through its web dashboard or CLI. In the event of porting your services to a new hosting environment, or even disaster-recovery, you would have to repeat the manual configuration steps, which is time-consuming and error-prone.
+
+The best services allow for complete configuration with files and service environment variables that can be committed to version control. When this is not possible, "bootstrapping" is necessary.
+
+To accomplish this, this repository uses ephemeral "setup" Compose services to perform the initial configuration of a service. Using containers over host-side scripts allows for a more consistent and reproducible setup process, as well as access to tools and dependencies that may not be available on the host system, for example a service's own CLI. In Kubernetes, this pattern is known as an "init container".
+
+This repository automates the execution of these setup services by utilizing the `depends_on` directive in the Compose file to ensure that the setup service runs, and completes successfully, before the main service starts. A slight downside of this approach is that the setup containers will need to be removed manually after they have exited, but it has been the universally accepted approach to this problem in the Docker community for years.
+
+As of late 2025, Compose officially supports [init containers](https://docs.docker.com/compose/how-tos/init-containers/), which creates cleaner syntax and better management of lifecycle containers around a service both before and after startup and shutdown. However, my excitement for this feature was quickly tempered by the fact that it does **not** support overriding the `entrypoint` of an image, making complex setup significantly more difficult. Until this is supported, I will continue to use the `depends_on` pattern for setup containers.
+
+#### Persistent Data Layout
+
+Services frequently require some form of persistent data to maintain state across container restarts and upgrades. This section covers the different types of persistent data and how to manage them effectively.
+
+##### Version-Controlled
+
+Often configuration files, branding assets, and other static files are required by a service and cannot be part of the Compose file itself. These files should be stored in version control alongside the Compose files to ensure that they are backed up, tracked, and can be easily restored or rolled back if needed.
+
+These files are stored in the visible `applications/<service>/container-data[/<service-instance>]` directory and are bind-mounted into the container at runtime. This allows for easy access and modification of the files without needing to rebuild the container image or porting changes from the runtime back to the repository.
+
+```mermaid
+---
+config:
+  treeView:
+    showIcons: true
+    defaultIconPack: material-icon-theme
+---
+treeView-beta
+"applications/"
+  "app1/"
+    "container-data/"
+      "app1-instance1/"
+        "config.yaml"
+        "branding.png"
+      "app1-instance2/"
+        "config.yaml"
+        "branding.png"
+  "app2/"
+    "container-data/"
+      "config.yaml"
+```
+
+##### Non-Version-Controlled; Non-Ephemeral
+
+Stateful services will have runtime data that is not suitable for version control but is critical for continuity of service. Such data would be critical to back up and restore in the event of a failure, and thus should be stored in a location that is not ephemeral and is easily accessible for backup and restore operations.
+
+One option is to use isolated Docker volumes that are tarballed during backup operations. This approach is simple and effective, but can be more difficult to manage if you already have a filesystem backup strategy in place.
+
+Another option, which this repository uses, is a bind-mounted directory in a hidden `applications/<service>/.container-data[/<service-instance>]` directory. This approach
+- mirrors the version-controlled data layout, making it easier to manage and understand
+- hides the data from casual browsing of the repository, reducing the risk of accidental modification or deletion
+- allows for easier backup and restore operations using existing filesystem backup strategies
+
+```mermaid
+---
+config:
+  treeView:
+    showIcons: true
+    defaultIconPack: material-icon-theme
+---
+treeView-beta
+"applications/"
+  "app1/"
+    ".container-data/"
+      "app1-instance1/"
+        "sqlite.db"
+      "app1-instance2/"
+        "sqlite.db"
+  "app2/"
+    ".container-data/"
+      "state/"
+```
+
+##### Non-Version-Controlled; Ephemeral
+
+Some stateful services may have runtime data that is not suitable for version control and is not critical for continuity of service: having this data persist across container restarts and upgrades is preferred, but not required and losing it across host migrations or failures is acceptable.
+
+Docker volumes are a good fit for this type of data, as they provide persistence across container restarts and upgrades, but can be easily recreated if lost.
+
+#### Secrets Management
 - <!-- TODO -->
 
-#### Theory: Structuring your Terraform project
-*(optional: required for external accessibility)*
+#### Networking and Exposure
+- <!-- TODO -->
 
-To keep with the modular structure set up with the Compose project, Terraform specific to a service should be in that service's directory. Similar to the root Compose file, the root Terraform module is the sole exception to this, as it must reference the application submodules to create the full infrastructure. To avoid also leaking service information required to configure routes into the `cloudflared` module definition, we can make use of dynamic Terraform to pass the configuration through the root module: more on this in the [Ingress](#ingress) section.
+#### Plug-and-Play Integrations
+- <!-- TODO using labels & docker socket tricks -->
 
-This means that creating or removing a service will involve touching the root and the service's Terraform files, but maintaining a service will generally only involve touching the service's Terraform files.
+#### Practical Compose Conventions
+- <!-- TODO -->
 
 ### Infrastructure
 - <!-- TODO -->
