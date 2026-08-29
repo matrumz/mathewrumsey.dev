@@ -267,7 +267,7 @@ treeView-beta
       "config.yaml"
 ```
 
-##### Non-Version-Controlled; Non-Ephemeral
+##### Non-Version-Controlled; State-Critical
 
 Stateful services will have runtime data that is not suitable for version control but is critical for continuity of service. Such data would be critical to back up and restore in the event of a failure, and thus should be stored in a location that is not ephemeral and is easily accessible for backup and restore operations.
 
@@ -298,16 +298,52 @@ treeView-beta
       "state/"
 ```
 
-##### Non-Version-Controlled; Ephemeral
+##### Non-Version-Controlled; Non-Critical
 
 Some stateful services may have runtime data that is not suitable for version control and is not critical for continuity of service: having this data persist across container restarts and upgrades is preferred, but not required and losing it across host migrations or failures is acceptable.
 
 Docker volumes are a good fit for this type of data, as they provide persistence across container restarts and upgrades, but can be easily recreated if lost.
 
 #### Secrets Management
-- <!-- TODO -->
+
+Secrets is a different category of data that
+- is managed by the administrator, not the application, and therefore needs visibility
+- unlike the visible, version-controlled data that is also admin-maintained, should **not** be stored in version control.
+- is critical for the functionality of the application.
+- requires obfuscation from processes that do not need access to the information.
+
+To that end, secrets are stored in non-hidden, globally git-ignored directories named `applications/<service>/secrets[/<service-instance>]`, and are specially mounted into containers using Compose's [`secrets`](https://docs.docker.com/compose/how-tos/use-secrets/) syntax.
+
+```mermaid
+---
+config:
+  treeView:
+    showIcons: true
+    defaultIconPack: material-icon-theme
+---
+treeView-beta
+"applications/"
+  "app1/"
+    "secrets/"
+      "app1-instance1/"
+        "license-key.txt"
+      "app1-instance2/"
+        "license-key.txt"
+  "app2/"
+    "secrets/"
+      "password.txt"
+      "username.txt"
+```
+
+
+Quality, security-minded services will offer `FILE_*`/`*_FILE`/etc. environment variables to point to files containing the secrets as an alternative to exposing secret values to anything that can see environment variables (which is a lot of things) or even the entrypoint run command flags.
 
 #### Networking and Exposure
+
+Another chapter in the security story is networking and limiting exposure should an intrusion occur.
+
+
+
 - <!-- TODO -->
 
 #### Plug-and-Play Integrations
