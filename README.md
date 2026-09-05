@@ -353,13 +353,13 @@ With this approach, even if an attacker gains access to one service, the damage 
 config:
   architecture:
     nodeSeparation: 75
-    idealEdgeLengthMultiplier: .6
-    edgeElasticity: 1
+    idealEdgeLengthMultiplier: 1
+    edgeElasticity: 1.5
     numIter: 1
 ---
 architecture-beta
 
-  service host(server)["Container host"]
+  service host(disk)["Container host"]
   service ingress(internet)["Cloudflared
     (Ingress)"]
   service rp(cloud)["Traefik
@@ -371,13 +371,13 @@ architecture-beta
 
   service devcontainer(server)["Devcontainer
     (outbound-connections only)"]
-  devcontainer:L -- R:host
+  devcontainer:B -- T:host
+  align column devcontainer host
 
   service pihole(server)["Pi-hole"]
   pihole:L -- R:host
   pihole:B -- T:rp
-
-  align column devcontainer pihole rp
+  align column pihole rp
 
   group photoprismgroup(server)[Photoprism]
     service photoprismttrpg(server)["Photoprism TTRPG"] in photoprismgroup
@@ -389,7 +389,6 @@ architecture-beta
   align column photoprismttrpg photoprismxkcd
 
   service maria(database)[MariaDB]
-  align row rp photoprismttrpg maria
 
   group grafanagroup(server)[Grafana]
     service grafana(server)["Grafana"] in grafanagroup
@@ -406,10 +405,13 @@ architecture-beta
   align column grafana alloy
   align row grafanaaccess grafanainternal loki
 
+  align row devcontainer grafana
+  align row host pihole alloy
+  align column grafana alloy photoprismttrpg photoprismxkcd
+  align column loki maria
+  align row ingress rp photoprismttrpg maria
+
 ```
-    grafanainternal:T -- B:grafana
-    grafanainternal:T -- B:alloy
-    grafanainternal:R -- L:loki
 
 ##### VPNs
 
