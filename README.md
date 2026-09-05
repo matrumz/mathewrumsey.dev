@@ -340,9 +340,78 @@ Quality, security-minded services will offer `FILE_*`/`*_FILE`/etc. environment 
 
 #### Networking and Exposure
 
-Another chapter in the security story is networking and limiting exposure should an intrusion occur.
+##### Network Segmentation
 
+Another chapter in the security story is networking and limiting exposure should an intrusion occur. In lieu of more traditional network access control lists (NACLs), which are not supported by Compose, we can use the "network segmentation" strategy.
 
+Network segmentation is where each service or group of services is placed on its own isolated network, and only the necessary connections between networks are allowed. Additionally, services that don't need internet access are placed on `internal` networks and networks are configured by default as `attachable=false` to prevent joining the secure network at runtime.
+
+With this approach, even if an attacker gains access to one service, the damage is contained because the compromised service cannot easily communicate with other services outside its isolated network.
+
+```mermaid
+---
+config:
+  architecture:
+    nodeSeparation: 75
+    idealEdgeLengthMultiplier: .6
+    edgeElasticity: 1
+    numIter: 1
+---
+architecture-beta
+
+  service host(server)["Container host"]
+  service ingress(internet)["Cloudflared
+    (Ingress)"]
+  service rp(cloud)["Traefik
+    (Reverse Proxy)"]
+  host:B -- T:ingress
+  ingress:R -- L:rp
+  align column host ingress
+  align row ingress rp
+
+  service devcontainer(server)["Devcontainer
+    (outbound-connections only)"]
+  devcontainer:L -- R:host
+
+  service pihole(server)["Pi-hole"]
+  pihole:L -- R:host
+  pihole:B -- T:rp
+
+  align column devcontainer pihole rp
+
+  group photoprismgroup(server)[Photoprism]
+    service photoprismttrpg(server)["Photoprism TTRPG"] in photoprismgroup
+    service photoprismxkcd(server)["Photoprism XKCD"] in photoprismgroup
+  photoprismttrpg:L -- R:rp
+  photoprismttrpg:R -- L:maria
+  photoprismxkcd:L -- R:rp
+  photoprismxkcd:R -- L:maria
+  align column photoprismttrpg photoprismxkcd
+
+  service maria(database)[MariaDB]
+  align row rp photoprismttrpg maria
+
+  group grafanagroup(server)[Grafana]
+    service grafana(server)["Grafana"] in grafanagroup
+    service loki(server)["Loki"] in grafanagroup
+    service alloy(server)["Alloy"] in grafanagroup
+    junction grafanaaccess in grafanagroup
+    junction grafanainternal in grafanagroup
+  grafanaaccess:L -- R:rp
+  grafanaaccess:T -- L:grafana
+  grafanaaccess:B -- L:alloy
+  grafanainternal:T -- R:grafana
+  grafanainternal:B -- R:alloy
+  grafanainternal:R -- L:loki
+  align column grafana alloy
+  align row grafanaaccess grafanainternal loki
+
+```
+    grafanainternal:T -- B:grafana
+    grafanainternal:T -- B:alloy
+    grafanainternal:R -- L:loki
+
+##### VPNs
 
 - <!-- TODO -->
 
