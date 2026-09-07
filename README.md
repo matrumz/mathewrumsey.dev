@@ -348,6 +348,8 @@ Network segmentation is where each service or group of services is placed on its
 
 With this approach, even if an attacker gains access to one service, the damage is contained because the compromised service cannot easily communicate with other services outside its isolated network.
 
+In the following diagram, each edge represents a unique Docker Compose network.
+
 ```mermaid
 ---
 config:
@@ -415,7 +417,63 @@ architecture-beta
 
 ##### VPNs
 
-- <!-- TODO -->
+At this time, I am only running a VPN client for my services to connect externally through, so I will only cover VPN clients here for the time being.
+
+However, VPN servers may be something you wish to explore to gain remote access to your Compose network(s).
+
+###### VPN Clients
+
+A VPN client allows your services to connect to external networks securely through an encrypted tunnel. This is useful for maintaining privacy and bypassing geo-restrictions. And for some services, it is critical that a loss of VPN connectivity results in a loss of external network access to prevent data leaks: this is often referred to as a "kill switch" feature and was the deciding factor when I was choosing hosting between Compose and Kubernetes.
+
+Docker Compose allows you to define a [service as the `network_mode`](https://docs.docker.com/engine/network/#container-networks). This enables you to attach a service to the network stack of another container, which is particularly useful for VPN clients to ensure that all traffic from the service goes through the VPN. And if the VPN connection drops, the service will lose external network access, effectively implementing a "kill switch" mechanism.
+
+There are additional considerations when networking in this manner:
+- When additional services need to communicate with the VPN-attached service...
+  - the additional services must also be attached to the same network.
+  - the VPN-attached service must be referenced with the VPN container's network alias or service name by the additional services.
+  - service-to-service communication must be configured as split-tunneling in the VPN service to ensure that traffic between services does not get routed externally through the VPN.
+- Multiple services sharing the same VPN client will no longer be isolated from each other (breaking the Network Segmentation strategy), as they and the VPN container share the same network. If your VPN license allows, consider running separate VPN client containers for each service to maintain isolation.
+
+```mermaid
+---
+config:
+  architecture:
+    nodeSeparation:
+    idealEdgeLengthMultiplier:
+    edgeElasticity:
+    numIter:
+---
+architecture-beta
+
+  service host(disk)["Container host"]
+  service ingress(internet)["Cloudflared
+    (Ingress)"]
+  service rp(cloud)["Traefik
+    (Reverse Proxy)"]
+  host:B -- T:ingress
+  ingress:R -- L:rp
+  rp:L -- R:host
+  align column host ingress
+  align row ingress rp
+
+  service vpn(server)["VPN Client"]
+  junction vpnnet
+  vpnnet:T --> B:vpn
+  vpn:L --> R:host
+  vpnnet:B -- T:rp
+  align row host vpn
+  align column vpn vpnnet rp
+
+  service secureservice(server)["Secure Service
+    (Accessible from Reverse Proxy)"]
+  secureservice:B -- R:vpnnet
+  service secureservicesidecar(server)["Secure Service Sidecar"]
+  secureservicesidecar:B -- R:vpnnet
+
+  align row host vpn secureservice secureservicesidecar
+
+```
+
 
 #### Plug-and-Play Integrations
 - <!-- TODO using labels & docker socket tricks -->
