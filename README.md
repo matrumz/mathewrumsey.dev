@@ -476,20 +476,91 @@ architecture-beta
 
 
 #### Plug-and-Play Integrations
-- <!-- TODO using labels & docker socket tricks -->
 
-#### Practical Compose Conventions
-- <!-- TODO -->
+Services that are designed to integrate with other containers sometimes have the ability to automate their configuration and communication with those containers through the Docker socket, using Docker labels and other metadata for discovery.
+
+Grafana and Traefik are two examples of services that can leverage Docker labels and the Docker socket in this way: the Traefik reverse-proxy configuration is defined on the downstream services through labels, and Grafana can filter and display metrics based on the labels and metadata of the containers it monitors.
+
+While this approach can greatly simplify the integration, configuration, and maintenance of services, creating a "plug-and-play" environment for containers, it also introduces potential security risks, as it requires granting containers access to the Docker socket, which can be exploited if not properly managed. Though not demonstrated here, it is possible to implement additional security measures, such as using a proxy or wrapper around the Docker socket to limit access and enforce policies.
 
 ### Infrastructure
-- <!-- TODO -->
+
+Before jumping into your self-hosted plans with the services you're excited to use, you should stop to consider the less-glamorous infrastructure those services will use.
+
+A good foundation should be seen as a way to facilitate adding your desired services, not a roadblock to their implementation.
 
 #### Ingress
 *(optional: required for external accessibility)*
-- <!-- TODO -->
+
+If you want your services to be accessible from outside your local network, you will need to properly configure ingress, reverse proxy, and TLS termination. This ensures that external requests are routed correctly to the appropriate services while maintaining secure communication.
+
+Three more common strategies for this are
+- Port Forwarding
+- VPN
+- **Proxy using a third-party service** -- Used in this guide
+
+##### Port Forwarding
+
+The least secure of the three strategies, port forwarding involves configuring your router to forward specific external ports to the internal IP addresses and ports of your services. While it allows direct access from the internet, it exposes your services to potential attacks and should be used with caution, ideally in combination with strong firewall rules and other security measures.
+
+##### VPN
+
+A VPN allows you to securely connect to your home network from an external location, effectively making your device part of the local network. This method adds a significant layer of security by requiring comprehensive authentication and encrypting the traffic between your device and the home network.
+
+Establishing a VPN connection is accomplished in conjunction with one of the other two strategies, either by
+- Port Forwarding: Instead of exposing ports with direct access from the internet to your services, which may have sub-par security, you can expose a single port for the VPN server, ensuring that all external traffic must go through the VPN before reaching your internal services. The VPN server will be designed with robust security to avoid exploits.
+- Third-Party Proxy: Instead of exposing any ports, the VPN server establishes an outbound connection to the third-party proxy service, which then handles incoming requests and forwards them to your internal services through the VPN. The third-party proxy service effectively acts as a secure intermediary, reducing the direct exposure of your internal network to the internet. Trust these funded, reputable companies to have better security than you do. Tailscale is a popular option for this setup.
+
+##### Proxy Using a Third-Party Service
+
+A proxy service acts as an intermediary between your internal services and the external internet, handling incoming requests and forwarding them to the appropriate internal service. This is accomplished by deploying an internal service that establishes an outbound connection to the third-party proxy service, which then acts as a secure tunnel for external traffic coming into your network.
+
+This is similar to VPN services, but without exposing the entirety of your internal network or requiring a VPN client configuration on each external device.
+
+The third-party proxy service can also handle some aspects of security before traffic reaches your tunnel service, such as DDoS protection, SSL/TLS termination, and request filtering, further reducing the exposure of your internal network to potential threats.
+
+Note that these services typically require more configuration for supported types of traffic, will have more rules/ToS from the provider regarding what kinds of traffic are allowed, and represents an additional dependency on an external service for the availability and security of your internal services.
+
+##### Cloudflare Tunnel
+
+This guide uses this strategy with the Cloudflare Tunnel service, chosen for
+- cost (free)
+- support for custom domains from any registrar
+- ease of setup and management
+- robust security features
+- reliable performance
 
 #### Reverse Proxy; TLS Termination
-- <!-- TODO -->
+
+You could access your internal services by memorizing IPs and port numbers and dismissing "insecure connection" warnings from your browser, but this approach is cumbersome and can be simplified with a single service acting as a reverse proxy and TLS terminator.
+
+##### TLS
+
+TLS (Transport Layer Security) is a cryptographic protocol that prevents eavesdropping and tampering of your traffic via man-in-the-middle attacks, and prevents malicious sites from impersonating your services by establishing proof of identity through digital certificates. Traffic over HTTPS is HTTP traffic encrypted with TLS, ensuring both confidentiality and integrity.
+
+Like many effective security measures, TLS is not the simplest to set up and manage correctly and requires precision with copious amounts of configuration. Because of this, it's easier to have a single service hold the certificate and decrypt incoming traffic, rather than configuring TLS individually for each internal service. The trick is to keep the termination as close to the edge of your services as possible, reducing the surface area exposed to potential attacks.
+
+[Let's Encrypt](https://letsencrypt.org/) is a popular certificate authority that provides free TLS certificates with automated issuance and renewal, making it easier to implement HTTPS for your services without the need for manual certificate management. [Certbot](https://certbot.eff.org/) is the preferred standalone client for obtaining and managing these certificates, but many popular proxy services like SWAG and Traefik have built-in support for automatically obtaining and renewing Let's Encrypt certificates.
+
+For those using ingress strategies like Cloudflare Tunnel, it is possible (and even simpler) to allow Cloudflare to hold the certificate and handle TLS termination before traffic reaches your internal services. However, Cloudflare does recommend still using HTTPS between Cloudflare and your internal services to ensure end-to-end encryption. Additionally, TLS termination at the tunnel would not provide HTTPS for connections between devices on your network unless they first egress to the internet first, increasing latency.
+
+##### Reverse Proxy
+
+A [reverse proxy](https://www.cloudflare.com/learning/cdn/glossary/reverse-proxy/) is a server that sits in front of web servers and forwards client (e.g. web browser) requests to those web servers. It can provide additional benefits such as load balancing, caching, and security by hiding the internal server details from clients.
+
+In the context of internal services, a reverse proxy can simplify access by providing a single entry point for all services, handling TLS termination, and routing requests to the appropriate backend service based on the requested domain or path. This means services can be accessed by human-readable URLs rather than obscure local IP addresses and port numbers, and all are accessible over HTTPs without managing TLS for each service.
+
+The same proxy can service traffic from your ingress proxy as well as requests originating from within your local network. Setting up custom DNS entries either on your router or another local DNS server (like Pi-hole) to point to the reverse proxy can enable you to access services with the same URL regardless of your location and without introducing latency from leaving the network.
+
+##### Traefik
+
+Traefik is this project's reverse proxy of choice for a few reasons:
+- Configuration is dynamic and can be updated without restarting the service. This keeps downtime and interruptions for your other services to a minimum.
+- Configuration can be automated for container-container traffic routing, utilizing Docker labels and Traefik's ability to read from the Docker socket and reload configuration dynamically.
+- Traefik has built-in support for Let's Encrypt, allowing automatic issuance and renewal of TLS certificates for your services without manual intervention.
+- Traefik has built-in middlewares for various network functionalities such as authentication, rate limiting, request modification, load balancing, and more.
+
+[SWAG (Secure Web Application Gateway)](https://docs.linuxserver.io/general/swag/) was my homelab's previous choice for a reverse proxy before switching to Traefik. Built on top of Nginx, SWAG provides similar security features and reverse proxy capabilities, with the additional benefit of also being able to be used as a web server to serve static content and host web applications directly. It lost out due to complexity and lack of automation for configuration compared to Traefik, and not being able to dynamically update its configuration without service restarts.
 
 #### Logging; Monitoring
 - <!-- TODO -->
