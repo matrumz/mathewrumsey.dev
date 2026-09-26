@@ -170,7 +170,7 @@ To meet the goals of
 - minimal recovery effort
 - portability
 
-I use Docker and Docker Compose to containerize, orchestrate, and manage my self-hosted services. Containerization makes it easy to deploy, update, and move services between different hardware or cloud providers. Compose files provide a declarative way to define and manage multi-container applications. By selectively using local bind mounts and Docker volumes, I can separate service data from the containers themselves, making it easier to back up and restore data as needed.
+I use Docker and Docker Compose to containerize, orchestrate, and manage my self-hosted services. Containerization makes it easy to deploy, update, and move services between different hardware or cloud providers. Compose files provide a declarative way to define and manage multi-container applications. Compose override files allow me to make small adjustments when testing on a development system without modifying the main Compose files that will be used in production on my homelab hardware. By selectively using local bind mounts and Docker volumes, I can separate service data from the containers themselves, making it easier to back up and restore data as needed.
 
 In this section, I will cover:
 - Theory - how and why I structure my Compose files and organize service data to meet my goals
@@ -563,30 +563,76 @@ Traefik is this project's reverse proxy of choice for a few reasons:
 [SWAG (Secure Web Application Gateway)](https://docs.linuxserver.io/general/swag/) was my homelab's previous choice for a reverse proxy before switching to Traefik. Built on top of Nginx, SWAG provides similar security features and reverse proxy capabilities, with the additional benefit of also being able to be used as a web server to serve static content and host web applications directly. It lost out due to complexity and lack of automation for configuration compared to Traefik, and not being able to dynamically update its configuration without service restarts.
 
 #### Logging; Monitoring
-- <!-- TODO -->
 
-#### Authentication; Authorization (AuthN/AuthZ)
-- <!-- TODO -->
+These are the tools you don't think about or need until something goes wrong. Without them, diagnosing issues and maintaining the health of your services can become significantly more difficult. To be honest, even I've only dealt with these at only a basic level, though I have plans to explore and implement more advanced logging and monitoring solutions in the future. This section will focus on high-level concepts because of this.
 
-#### Development Environment
-- <!-- TODO -->
+##### Logging
+
+Thanks to our Docker container environment, baseline logging is easy and requires no additional setup: simply utilize the `docker logs <container_name>` command to view the logs for any running container. This is just a raw stream, however, and requires manual inspection and filtering across multiple containers if you want a comprehensive view of your system's behavior.
+
+Logging tools like Grafana and [Datadog](https://www.datadoghq.com/product/) (the latter more focused on enterprise environments and not homelabs) will
+- aggregate logs from multiple sources, providing a centralized view of your system's behavior.
+- parse logs into searchable fields, allow for advanced querying and filtering of logs to quickly identify issues and trends.
+- support alerting and notifications based on specific log patterns or thresholds, helping you proactively address potential problems.
+
+Tips for effective logging include:
+- Configure all services to output logs in structured formats like JSON, which makes it easier to parse and analyze logs programmatically.
+- Configure all services to output "info" level logs by default, and adjust the log level as needed for debugging or troubleshooting, but avoid setting it to "debug" in production unless necessary to prevent log flooding.
+- Implement a rotation and retention policy for logs to prevent disk space exhaustion and ensure that old logs are archived or deleted appropriately.
+- Regularly review and analyze logs to identify recurring issues, performance bottlenecks, and potential security threats.
+
+##### Monitoring
+
+Monitoring involves continuously observing the performance and health of your system and services. This goes beyond analyzing log output and includes tracking metrics such as CPU usage, memory consumption, disk I/O, network traffic, health checks, and other key performance indicators (KPIs) to ensure your system is running optimally.
+
+Tools like [Prometheus](https://prometheus.io/docs/introduction/overview/) can often be used in conjunction with logging aggregators/visualization tools like Grafana to provide a comprehensive monitoring and alerting solution for your system.
+
+#### Maintenance Access
+
+Having a simple way to maintain your deployed services is the difference between having the exercise feel like a burdensome chore versus something you hardly have to think about at all.
+
+The first methods that may come to mind are a physical workstation setup with monitor and keyboard, or using SSH to remotely access the server hosting your Docker containers. Both approaches have their pros and cons: a physical setup provides direct access and may be necessary for initial configuration or troubleshooting, while SSH allows for convenient headless management (from anywhere if you make the necessary network and security configurations). Also, both approaches may require additional software installs on your host if you rely on specific tools or utilities for maintenance tasks. These installs need additional management and consideration to ensure they do not interfere with the stability and security of your system: wouldn't it be nice if we could maintain the maintenance environment the same way we maintain our services?
+
+The solution is to containerize the maintenance environment itself, just like the services it manages. [Microsoft's development containers](https://github.com/devcontainers/images) ("devcontainers") provide a ready-made framework for creating containerized development and maintenance environments, allowing you to define all necessary tools, dependencies, and configurations in a reproducible manner.
+
+Layering in a [Visual Studio Code Server](https://code.visualstudio.com/docs/remote/vscode-server) instance provides the access, interface, and security needed to access the devcontainer remotely without ever opening a port.
+
+Finally, enabling [Docker-out-of-Docker](#docker-out-of-docker) allows the maintenance container to manage other containers on the host directly, providing a powerful and flexible way to maintain your services without compromising the isolation and reproducibility benefits of containerization.
+
+This repo encapsulates all this in the "devcontainer" application, which takes care of additional setup, such as user/group-id matching.
 
 ### Other Services
 
-#### DNS Server - Pi-hole
-- <!-- TODO -->
+Up until this point, most of this document has covered setup, best practices, and more administrative topics related to maintaining your self-hosted services. If you've made it here, you're primed to start deploying the services you actually want to use.
 
-#### VPN Client - NordVPN
-- <!-- TODO -->
+This section is a very short overview of example services deployed in this repository.
+
+#### DNS Server - Pi-hole
+
+Pi-hole is primarily used as a network-wide ad blocker that filters out unwanted advertisements and trackers at the DNS level, improving privacy and reducing bandwidth usage. By changing your devices' DNS settings to point to the Pi-hole server, all DNS queries are filtered through Pi-hole, blocking ads and trackers before they reach your devices. Alternatively, you can configure your router to use Pi-hole as the DNS server, automatically protecting all devices on your network without needing to configure each one individually.
+
+While using Pi-hole, you should not configure your router or devices to have fallback DNS servers that bypass Pi-hole, as this would defeat the purpose of using Pi-hole for network-wide ad blocking. This does have the downside that any Pi-hole downtime will result in a loss of DNS resolution for your network until the service is restored.
+
+Some other benefits of Pi-hole:
+- Custom local DNS entries for internal network devices and services
+- DHCP server support allows bypassing ISP-locked router configuration
+- Logs and statistics for monitoring network activity
+- Customizable blocklists for tailored network rules (like parental controls)
 
 #### File Access - File Browser
-- <!-- TODO -->
+
+File Browser is a web-based file management tool that allows you to browse, upload, and manage your files through a user-friendly interface.
+
+It is comparable to 3rd-party cloud storage services like Google Drive or Dropbox.
 
 > [!TIP]
 > File Browser is now in maintenance mode: while I've used it for this demo and my private homelab for a while and like it, I would recommend considering its replacement [FileBrowser Quantum](https://github.com/gtsteffaniak/filebrowser).
 
 #### Photo Management - Photoprism
-- <!-- TODO -->
+
+PhotoPrism is a web-based photo management application that helps you organize, browse, and share your photo collection. It uses machine learning to automatically tag and categorize your photos, making it easier to search and manage large photo libraries.
+
+It is comparable to 3rd-party photo management services like Google Photos or iCloud Photos.
 
 ### Honorable Mentions
 Services that I currently self-host or have self-hosted in the past that I would recommend considering for a self-hosted platform:
@@ -615,12 +661,22 @@ When deploying any new application, pre-plan your update cadence, tolerance for 
 - sha256 digests with `missing` pull policy - for security-critical applications where avoiding vulnerabilities is a higher priority than receiving updates. This approach is the only one that will protect you from supply chain attacks, but requires the most maintenance effort and vigilance to keep up with updates.
 
 ### Backup and Restore
-- <!-- TODO -->
+
+You've gotten everything running smoothly and just the way you want it: great! How much time did it take? Do you remember everything you configured and set up? Would you want to do it again? Probably not.
+
+If you've followed the recommendations in this guide, you're closer to having foolproof backups and restores than you might think. This section outlines how it all comes together.
 
 #### Back up your Infrastructure and Configuration
-- <!-- TODO; git -->
+
+Use version control systems like `git` to track changes to your infrastructure and configuration files. This allows you to easily roll back to previous states, collaborate with others, and maintain a history of your setup. With the exception of Compose override files, `secrets/` directories, and some Terraform resources, this repository assumes anything not hidden (e.g., files and directories not starting with a dot) should be tracked in version control. See this repository's [`.gitignore`](.gitignore) for details on what is excluded.
+
+Additionally, consider using remote repositories (e.g., GitHub, GitLab, or Bitbucket) for offsite storage of your configuration files. This provides an extra layer of backup and allows you to access your configurations from anywhere.
 
 #### Back up your Service Data
+
+As discussed in the [Non-Version-Controlled; State-Critical Persistent Data Section](#non-version-controlled-state-critical), all state-critical persistent data is stored in `.container-data` directories within the project.
+
+Using tools like [`rsync`](https://linux.die.net/man/1/rsync) makes it trivial to back up and restore your service data by synchronizing the contents of your `.container-data` directories with a remote or local backup location.
 
 ## Appendix
 
@@ -646,3 +702,11 @@ When creating your Cloudflare API token for Terraform management of your site, t
   - `cloudflare_zone`
 - **Zone - Zone Settings - Edit**
   - `cloudflare_zone_setting`
+
+### Docker-out-of-Docker
+
+Docker-out-of-Docker (DooD) is a technique that allows a container to run Docker commands by using the Docker daemon of the host machine. This differs from Docker-in-Docker (DinD), where a separate Docker daemon runs inside the container itself in isolation from the host's Docker landscape. This can be useful for maintenance containers that need to manage other containers running on the host.
+
+To achieve Docker-out-of-Docker, you typically mount the host's Docker socket (`/var/run/docker.sock`) into the container. This allows the container to communicate with the host's Docker daemon directly, executing commands as if they were run on the host itself.
+
+For additional security, Docker socket proxy containers, such as [Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy), can be used to control and limit access to the Docker socket, reducing the risk of exposing the host's Docker daemon directly to the container.
