@@ -33,7 +33,6 @@ x-ref:
           target: vsc
         environment: &devcontainer_services_common_environment
           TUNNEL_LOG: warn
-          # TODO json logging
           TZ: *host_tz
         group_add:
           - *host_users_docker_gid
