@@ -2,7 +2,9 @@
 
 This repository is a practical blueprint for running a self-hosted ecosystem without turning it into a fragile collection of one-off scripts and ad hoc configuration. The goal is simple: keep the stack affordable, recoverable, secure, and easy to expand.
 
-The question I get most often is how someone can self-host a large number of services while keeping control of their data and avoiding a maintenance burden. The answer is not magic; it is a mix of version-controlled configuration, containerization, automation, and careful network design. This repo demonstrates that pattern in a way that can be adapted to a real homelab or a similar self-hosted environment.
+The question I get most often in the Hack Portland Meetup group is how I self-host a large number of services while keeping control of their data and avoiding a maintenance burden. The answer is a mix of version-controlled configuration, containerization, automation, and careful network design. This repo demonstrates that pattern in a way that can be adapted to a real homelab or a similar self-hosted environment.
+
+Throughout this guide, I will mark the limited paid services with **`($)`**.
 
 ### Goals for this self-hosted setup
 - **Minimal cost**
@@ -13,7 +15,7 @@ The question I get most often is how someone can self-host a large number of ser
 	<br>Design the system so a hardware issue, failed update, or service outage does not require rebuilding the whole stack from memory.
 	<br>*Backup and restore practices are covered later in this guide.*
 - **Professional techniques**
-	<br>Apply infrastructure patterns commonly used in real IT and DevOps environments, even in a home lab.
+	<br>Apply infrastructure patterns commonly used in real IT and DevOps environments, even in a homelab.
 - **Privacy**
 	<br>Reduce dependence on third-party services that monetize user behavior or lock data into proprietary ecosystems.
 - **Security**
@@ -21,22 +23,23 @@ The question I get most often is how someone can self-host a large number of ser
 - **Portability**
 	<br>Keep critical configuration in version control and use containerization so the environment can move between systems with minimal friction.
 - **External accessibility**
-	<br>Use outbound-only connections, DNS management, and secure tunneling so services can be reached from anywhere without exposing a large attack surface. If your goal is only local network access, skip sections marked `optional: required for external accessibility`.
+	<br>Use outbound-only connections, DNS management, and secure tunneling so services can be reached from anywhere without exposing a large attack surface.
+	<br><u>If your goal is only local network access, skip sections marked `optional: required for external accessibility`.</u>
 
 ### How to use this repository
 
-This repo is organized as a real-world example rather than a toy setup. It is meant to show how to structure:
+This repo is organized as a fully functional homelab setup that will be deployed in a live demo and can be cloned elsewhere as a starting point for your own self-hosted environment. It demonstrates how to structure:
 - cloud resources with Terraform
 - service deployment with Docker Compose
 - persistent data and secrets management
 - ingress, networking, and reverse-proxy routing
 - maintenance and recovery habits for a long-lived homelab
 
-It is not intended to be a one-click install. It is a blueprint that you can adapt, simplify, or expand to match your own requirements.
+While not a one-click install, there are sub-documentation and examples to guide you through the configuration required for running this homelab setup.
 
 ## Technologies and Services Used
 - **Domain Registration**
-	- $ [Porkbun](https://porkbun.com/about) for affordable, unlocked domain registration
+	- **($)** [Porkbun](https://porkbun.com/about) for affordable, unlocked domain registration
 - **Version Control**
 	- [Git](https://git-scm.com/) for version control of IaC and configuration files
 - **Containerization**
@@ -62,9 +65,9 @@ It is not intended to be a one-click install. It is a blueprint that you can ada
 Before you start writing infrastructure, make sure the environment is aligned with the design of the stack.
 
 1. **Prepare your hosting environment**
-	<br>This could be a Raspberry Pi, a laptop tucked away in a closet, a dedicated homelab server, or a small cloud VM ($).
+	<br>This could be a Raspberry Pi, a laptop tucked away in a closet, a dedicated homelab server, or a small cloud VM **($)**.
 	- Ensure you have enough CPU, memory, and storage for the services you plan to run.
-	- Ensure reliable network connectivity and good power stability if this is a home lab device.
+	- Ensure reliable network connectivity and good power stability if this is a homelab device.
 	- Keep the host OS and core software up to date.
 	- Install the following tools:
 		- Docker
@@ -77,14 +80,14 @@ Before you start writing infrastructure, make sure the environment is aligned wi
 	<br>Cloudflare offers a helpful free tier for DNS management, object storage, and secure tunneling. That makes it a strong fit for self-hosting without opening a large number of ports or relying on fragile home-router setups.
 	- Follow-up steps:
 		- Create a Cloudflare API token with permissions for Terraform management of your site.
-			- Because your site is not created yet, you can create a token with broad enough permissions for the account or zone and tighten it later once the zone exists.
+			- Because your site (a.k.a. Cloudflare "Zone") is not created yet, you cannot create a token scoped to only that zone. Instead, create a token with "Zone Resources" scopes set to "All zones from an account", then tighten it later once the zone exists.
 			- See [Appendix: Cloudflare API Token Permissions](#cloudflare-api-token-permissions) for the required permissions.
 		- Create a free R2 bucket for the Terraform state backend and generate an R2 API token for access.
 			<br>https://developers.cloudflare.com/terraform/advanced-topics/remote-backend/
 
 1. **Obtain a domain name** or use an existing one that supports DNS management by Cloudflare
 	<br>*(optional: required for external accessibility)*
-	<br>A domain name gives your services human-friendly URLs, makes them reachable without a static IP, and gives you a clean path to TLS. It is one of those things that looks optional until you actually want to use the stack from outside your local network.
+	<br>A domain name gives your services human-friendly URLs and makes them reachable without a static IP. It is one of those things that looks optional until you actually want to use the stack from outside your local network.
 	- I use Porkbun as my registrar:
 		- Cheap domains
 		- Unlocked domains, [in contrast to Cloudflare](https://porkbun.com/about/porkbun-vs-cloudflare)
@@ -99,7 +102,7 @@ Terraform is used here to automate what can be automated: DNS, tunnel configurat
 
 This section covers:
 - Terraform structure for a modular deployment
-- Cloudflare DNS and zone setup
+- Cloudflare DNS and Zone setup
 - Cloudflare Tunnel as the public ingress point
 - the manual steps that still exist for provider-specific setup
 
@@ -171,7 +174,7 @@ To my dismay, I learned while writing this document that GCP does not have all t
 
 ## Deploy your Self-Hosted Services
 
-This is the operational core of the project: a set of Dockerized services, each with a clear purpose, a data model, and a specific relationship to the rest of the stack.
+This is the operational core of the project: a set of containerized services, each with a clear purpose, a data model, and a specific relationship to the rest of the stack.
 
 The real goal is not simply to run containers. It is to make each service predictable, recoverable, and easy to reason about. That means keeping configuration in version control, separating runtime state from static config, and structuring the platform so components can be added, replaced, or rebuilt without turning the whole system into a fragile pile of manual work.
 
@@ -219,6 +222,13 @@ treeView-beta
   "app2/"
     "compose.yaml"
     "compose.override.yaml"
+"external-projects/"
+  "external-project-1/"
+    "compose.yaml"
+    "compose.override.yaml"
+    "applications/"
+  "external-project-2/"
+  "..."
 ```
 
 #### YAML Organization and Reuse
@@ -235,9 +245,9 @@ A major principle in this project is that services should not be started and the
 
 The best services allow for most or all of their configuration to be expressed in files, environment variables, and startup automation. When a service cannot be fully configured that way, the repository uses a lightweight bootstrapping pattern with temporary setup containers.
 
-These ephemeral setup services run before the main application and handle initial configuration tasks, such as creating accounts, generating config, or preparing required data directories. This keeps the actual service definition cleaner and makes the setup more repeatable. The repository enforces the dependency flow with Docker Compose so the setup runs first and only proceeds when it succeeds.
+These ephemeral setup services run before the main application and handle initial configuration tasks, such as creating accounts, generating config, or preparing required data directories. This keeps the actual service definition cleaner and makes the setup more repeatable. The repository enforces the dependency flow with Docker Compose's `depends_on` syntax so the setup runs first and only proceeds when it succeeds.
 
-This is not a perfect pattern, and it is not the only approach. In late 2025, Compose gained native init-container support, but it still does not cover all of the advanced override use cases needed for complex bootstrapping. For now, the `depends_on` pattern remains the pragmatic choice here.
+While widely used, the `depends_on` pattern is not a perfect pattern, as it leaves stopped setup containers lingering, which require manual cleanup. To cover this use-case gap with official features, Compose, in late 2025, gained native [init containers](https://docs.docker.com/compose/how-tos/init-containers/) support, but it still does not cover all of the advanced override use cases needed for complex bootstrapping (like overriding `entrypoint`). For now, the `depends_on` pattern remains the pragmatic choice here.
 
 #### Persistent Data Layout
 
@@ -281,6 +291,7 @@ Some data is stateful and too sensitive or too dynamic to store in Git. This is 
 This pattern is useful because it:
 - mirrors the visible data layout for predictability
 - hides the runtime data from casual repository browsing
+- keeps `.gitignore` rules simple and effective
 - fits naturally into standard filesystem backup strategies
 
 ```mermaid
@@ -334,7 +345,7 @@ treeView-beta
       "username.txt"
 ```
 
-A good practice for any serious service is to support `FILE_*` or `*_FILE` environment variables so the application reads secrets from disk rather than from plain environment variables, which are much easier to leak through process inspection or logs.
+A good practice for any serious service is to support `FILE_*` or `*_FILE` environment variables so the application reads secrets from disk rather than from plain environment variables or command flags, which are much easier to leak through process inspection or logs.
 
 #### Networking and Exposure
 
@@ -342,7 +353,10 @@ A good practice for any serious service is to support `FILE_*` or `*_FILE` envir
 
 A self-hosted platform is easier to secure when services are not all sitting on the same network and talking to each other freely. This project uses network segmentation as a practical alternative to more traditional firewall ACL patterns, which are not natively available in Compose.
 
-The rule of thumb is simple: place each service or service group on its own isolated network, allow only the required connections, and keep services that do not need internet access on internal networks with `attachable=false` by default.
+The rule of thumb is simple:
+- place each service or service group on its own isolated network
+- allow only the required connections with `attachable=false`
+- keep services that do not need internet access on `internal` networks
 
 This limits damage if one service is compromised. An attacker may get access to one container, but the blast radius is reduced because that container cannot easily reach unrelated parts of the stack.
 
@@ -417,7 +431,7 @@ architecture-beta
 
 This repository currently uses a VPN client model for outbound traffic rather than exposing services directly to the internet through a home-router port-forwarding setup. That approach is intentional: it keeps the environment more private, gives the platform a stronger security posture, and helps avoid a common problem in self-hosted stacks where a single exposed service becomes the weak point in the entire network.
 
-The key concept is a "kill switch" pattern. If the VPN connection drops, the service loses the ability to reach external networks, which prevents a service from silently leaking traffic outside the intended path. This is especially useful for services that should only communicate over the VPN to avoid accidental privacy or security leaks.
+The key concept is a "kill switch" pattern. If the VPN connection drops, any/all attached services lose the ability to reach external networks, which prevents a service from silently leaking traffic outside the intended path. This is especially useful for services that should only communicate over the VPN to avoid accidental privacy or security leaks.
 
 ###### VPN Clients
 
@@ -427,7 +441,7 @@ In Docker Compose, a service can be attached to another container's network stac
 
 A few important caveats come with this model:
 - services that need to talk to the VPN-attached service must also be on the same network
-- the VPN-attached service must be addressed by the VPN container's alias or service name
+- the VPN-attached service must be addressed by the VPN container's alias or service name; port-based addressing is required to differentiate between services on the same network
 - split tunneling must be configured for trusted internal traffic so it does not get unnecessarily routed out through the VPN
 - multiple services using the same VPN client share the same network context, which weakens the segmentation model if you are trying to isolate every service completely
 
@@ -479,7 +493,7 @@ Some services are designed to integrate with the rest of the Docker ecosystem th
 
 Grafana and Traefik are two useful examples of this pattern. Traefik can automatically route traffic based on labels attached to downstream containers, while Grafana can read container metadata and use that to build dashboards or monitor the health of services more contextually.
 
-This is a powerful pattern because it reduces configuration drift and makes the platform more maintainable. It also introduces a tradeoff: if a container has access to the Docker socket, it can observe and potentially influence the broader runtime environment. That is why this pattern should be used carefully and ideally behind tighter security boundaries.
+This is a powerful pattern because it reduces configuration drift and makes the platform more maintainable. It also introduces a tradeoff: if a container has access to the Docker socket, it can observe and potentially influence the broader runtime environment. That is why this pattern should be used carefully and ideally behind tighter security boundaries, such as [socket-proxy](https://hub.docker.com/r/linuxserver/socket-proxy) containers.
 
 This repo does not rely on the Docker socket for every service, but it does demonstrate a reasonable middle ground where automation is useful without sacrificing too much control.
 
@@ -505,22 +519,36 @@ Port forwarding is the least secure of the common options. It exposes specific p
 
 ##### VPN
 
-A VPN approach lets you connect to your home network as if you were inside it, which reduces the exposure of your services to the public internet. This pattern can be very secure, especially when combined with thoughtful hardening and, in some cases, a firewall or a kill-switch strategy.
+A VPN approach lets you securely connect to your home network from an external location, effectively making your device part of the local network.
 
-It is a good model when the priority is private access from trusted devices, but it does require more operational thinking about remote access, split tunneling, and the trust assumptions behind the deployment.
+This method adds a significant layer of security by requiring comprehensive authentication and encrypting the traffic between your device and your home network and is a good model when the priority is private access from trusted devices, but comes with the drawbacks of added complexity, potential performance overhead, and VPN-client requirements for your devices.
+
+Establishing a VPN connection is accomplished in conjunction with one of the other two strategies.
+
+###### VPN with Port Forwarding
+
+In this model, you combine port forwarding with a VPN by only exposing the VPN endpoint to the public internet, while all other services remain accessible exclusively through the local network via the VPN.
+
+This approach minimizes the attack surface exposed to the internet while ensuring that the one exposed service (the VPN) is well-protected.
+
+###### VPN with Proxy Using a Third-Party Service
+
+Instead of exposing ports, your locally-running VPN server connects to a third-party proxy service, which then handles incoming traffic and forwards it securely to your internal network.
+
+This setup allows you to benefit from the security of a VPN while leveraging the convenience and protection of a managed proxy service.
 
 ##### Proxy Using a Third-Party Service
 
-A proxy service acts as a secure intermediary between your internal services and the public internet. Instead of exposing your internal network directly, your services connect outbound to a trusted proxy provider, which then manages incoming external traffic and forwards it to the appropriate backend service.
+A proxy service acts as a secure intermediary between your internal services and the public internet. Instead of exposing your internal network or services directly, you deploy one service that connects outbound to a trusted proxy provider, which then manages incoming external traffic and forwards it to your local backend service. The local backend service then can then securely route the traffic to the appropriate internal service based on the request details.
 
-This is the pattern used in this repository because it balances security, convenience, and practicality. It avoids exposing a large number of ports, supports custom domains, and gives you a clean path to HTTPS and TLS termination without requiring every internal service to manage its own certificate lifecycle.
+This is the pattern used in this repository because it balances security, convenience, and practicality. It avoids exposing any ports, supports custom domains, and gives you a clean path to HTTPS and TLS termination without requiring every internal service to manage its own certificate lifecycle.
 
 The tradeoff is that you are adding a dependency on a third-party service for availability and policy enforcement, which is not free of operational risk. That is why the architecture still matters: network isolation, strong service security, and a clean reverse proxy model remain important even when the edge is managed by a provider.
 
 ##### Cloudflare Tunnel
 
 This guide uses Cloudflare Tunnel as the edge access model, and it is a strong fit for a self-hosted deployment because it offers:
-- free or low-cost access for many personal projects
+- free access for many personal projects
 - support for custom domains from almost any registrar
 - a simple outbound-only model that avoids direct port exposure
 - strong security features and a managed edge layer
@@ -534,11 +562,11 @@ Once you have an ingress strategy in place, the next layer is the reverse proxy.
 
 ##### TLS
 
-TLS is the encryption layer that protects traffic between clients and your services. It prevents eavesdropping and tampering and also verifies the identity of a service through certificates. When you use HTTPS, the connection is encrypted before it reaches the application layer.
+Transport Layer Security (TLS) is the encryption layer that protects traffic between clients and services. It prevents eavesdropping and tampering and also verifies the identity of a service through certificates. When you use HTTPS, the connection is encrypted before it reaches the application layer.
 
 The real challenge is not just enabling HTTPS, but doing it correctly and at the right layer. It is much easier to terminate TLS at the edge or in a single reverse proxy than to configure certificates individually for every service. That is why a central proxy is so useful.
 
-[Let's Encrypt](https://letsencrypt.org/) is the standard choice for free certificates, and tools like Certbot and Traefik can manage renewal automatically. For setups using Cloudflare Tunnel, Cloudflare itself can terminate TLS before the request reaches your internal services, though you still want HTTPS between the edge and the internal service when possible for end-to-end security.
+[Let's Encrypt](https://letsencrypt.org/) is the standard choice for free certificates, and tools like [Certbot](https://certbot.eff.org/) and Traefik can manage renewal automatically. For setups using Cloudflare Tunnel, Cloudflare itself can terminate TLS before the request reaches your internal services, though you still want HTTPS between the edge and the internal service when possible for end-to-end security and traffic originating from inside your network.
 
 ##### Reverse Proxy
 
@@ -550,6 +578,7 @@ The same reverse proxy can also handle:
 - path-based or host-based routing
 - load balancing
 - middleware for authentication or rate limiting
+- middleware for caching or compression
 
 This is a huge simplification in a self-hosted environment because it keeps ingress and routing logic centralized instead of repeating it across every app.
 
@@ -585,7 +614,7 @@ Good logging habits matter more than the specific tool. Structured logs, sensibl
 
 Monitoring is broader than logs. It includes CPU usage, memory, disk usage, network traffic, health checks, and the status of services over time. This gives you a more complete picture of how the platform is performing and helps catch issues before they become a user-facing outage.
 
-A stack like Prometheus plus Grafana is a common fit for this kind of setup, and it works well with a containerized self-hosted environment. The important thing is to monitor the things that matter, not just every metric available in the ecosystem.
+A stack like [Prometheus](https://prometheus.io/docs/introduction/overview/) plus Grafana is a common fit for this kind of setup, and it works well with a containerized self-hosted environment. The important thing is to monitor the things that matter, not just every metric available in the ecosystem.
 
 #### Maintenance Access
 
@@ -595,7 +624,7 @@ That is why this repository uses a devcontainer-based maintenance environment. [
 
 This pattern turns maintenance into part of the same reproducible infrastructure model as the rest of the stack. It also makes it easier to run updates, inspect configs, and troubleshoot from anywhere without introducing host-level drift.
 
-Finally, the repository uses [Docker-out-of-Docker](#docker-out-of-docker) so the devcontainer can interact with the host's Docker daemon directly. That gives the maintenance environment enough access to manage the stack without forcing you to install every admin tool on the host itself.
+Finally, this repository uses [Docker-out-of-Docker](#docker-out-of-docker) so the devcontainer can interact with the host's Docker daemon directly. That gives the maintenance environment enough access to manage the stack without forcing you to install every admin tool on the host itself.
 
 ### Other Services
 
@@ -633,7 +662,7 @@ This is one of the clearest examples of a self-hosted service replacing a conven
 These are services worth considering if you want to expand this ecosystem further:
 - [Calibre](https://docs.linuxserver.io/images/docker-calibre/) - E-book management
   - [Calibre-Web](https://docs.linuxserver.io/images/docker-calibre-web/) - browser-based reading and library access
-- ($) [Foundry VTT](https://hub.docker.com/r/felddy/foundryvtt) - virtual tabletop for role-playing games
+- **($)** [Foundry VTT](https://hub.docker.com/r/felddy/foundryvtt) - virtual tabletop for role-playing games
 - [Jellyfin](https://docs.linuxserver.io/images/docker-jellyfin/) - media streaming and library management
 - [Sonatype Nexus Repository](https://hub.docker.com/r/sonatype/nexus3) - package repository hosting for internal tooling and dependencies
 
@@ -650,13 +679,13 @@ At this point, the stack is running and the real work shifts to operations. A pl
 
 The entire point of IaC and containerization is to reduce the amount of manual work in day-to-day operations. Instead of logging into a bunch of systems and making changes by hand, you can update configuration files, review the diffs, and reapply the same pattern consistently.
 
-This repo also keeps a devcontainer as a maintenance environment. That means you can do operational work from any device with a browser, without needing to install a bunch of extra software on your home lab host.
+This repo also keeps a devcontainer as a maintenance environment. That means you can do operational work from any device with a browser, without needing to install a bunch of extra software on your homelab host.
 
 When selecting a Docker image or version policy for a service, think about your tolerance for change:
 - `latest` with `always` pull policy - best for early experimentation and low-risk services, but not for anything that needs stability
 - mutable major tags like `1` or `2` with `always` - a good default when the project maintains backward compatibility well
-- immutable semantic versions like `1.2.3` with `missing` pull policy - useful for services that are sensitive to breaking changes
-- sha256 digests with `missing` pull policy - the most conservative and secure option, but the most work to maintain
+- immutable-by-convention semantic versions like `1.2.3` with `missing` pull policy - useful for services that are sensitive to breaking changes
+- truly-immutable sha256 digests with `missing` pull policy - the most conservative and secure option, but the most work to maintain
 
 The right policy depends on the service and the amount of risk you are comfortable accepting.
 
@@ -679,7 +708,9 @@ Stateful services should have a clear backup location and a simple restore path.
 
 That separation matters. It makes it easy to back up the data you actually care about without making everything part of a fragile, version-controlled blob.
 
-Tools like [`rsync`](https://linux.die.net/man/1/rsync) are enough for many homelab setups. The point is not to overengineer the process, but to make it easy enough that backups happen consistently rather than only after a disaster is already underway.
+Tools like [`rsync`](https://linux.die.net/man/1/rsync) are enough for many homelab setups. The point is not to over-engineer the process, but to make it easy enough that backups happen consistently rather than only after a disaster is already underway.
+
+For planned migrations, you may wish to also tarball your non-critical runtime state Docker volumes to have a seamless switchover.
 
 ## Appendix
 
