@@ -1,3 +1,5 @@
+#region Cloud
+
 resource "cloudflare_dns_record" "tunnel" {
   for_each = toset(concat(var.domains, [for app in var.application_configs : app.hostname if app.hostname != null]))
   content  = "${cloudflare_zero_trust_tunnel_cloudflared.this.id}.cfargotunnel.com"
@@ -36,3 +38,39 @@ data "cloudflare_zero_trust_tunnel_cloudflared_token" "this" {
   account_id = var.cloudflare_zone.account.id
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.this.id
 }
+
+#endregion
+
+#region Local
+
+locals {
+  cloudflared_token_file = "/run/secrets/cloudflared-token"
+}
+resource "docker_container" "cloudflared" {
+  name  = "cloudflared"
+  image = "cloudflare/cloudflared:latest"
+  ###
+  command = ["tunnel", "run"]
+  restart = "always"
+  environment = {
+    TUNNEL_LOG_OUTPUT = "JSON"
+    TUNNEL_TOKEN_FILE = local.cloudflared_token_file
+    TZ                = "America/New_York"
+  }
+  labels {
+    label = "dev.mathewrumsey.grafana.instance"
+    value = "default"
+  }
+  labels {
+    label = "net.unraid.docker.icon"
+    value = "https://raw.githubusercontent.com/aeleos/cloudflared/main/cloudflare-icon.png"
+  }
+  upload = {
+    file        = local.cloudflared_token_file
+    content     = data.cloudflare_zero_trust_tunnel_cloudflared_token.this.token
+    permissions = "0400"
+  }
+
+}
+
+#endregion
