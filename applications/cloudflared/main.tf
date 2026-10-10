@@ -46,31 +46,47 @@ data "cloudflare_zero_trust_tunnel_cloudflared_token" "this" {
 locals {
   cloudflared_token_file = "/run/secrets/cloudflared-token"
 }
+
+module "docker_access_network" {
+  source = "../../tf-modules/docker/networks/access"
+  name   = "cloudflared"
+}
+
 resource "docker_container" "cloudflared" {
   name  = "cloudflared"
-  image = "cloudflare/cloudflared:latest"
+  image = docker_image.cloudflared.image_id
   ###
   command = ["tunnel", "run"]
-  restart = "always"
-  environment = {
+  env = [for key, value in {
     TUNNEL_LOG_OUTPUT = "JSON"
     TUNNEL_TOKEN_FILE = local.cloudflared_token_file
     TZ                = "America/New_York"
+  } : "${key}=${value}"]
+  dynamic "labels" {
+    for_each = {
+      "dev.mathewrumsey.grafana.instance" = "default"
+      "net.unraid.docker.icon"            = "https://raw.githubusercontent.com/aeleos/cloudflared/main/cloudflare-icon.png"
+    }
+    content {
+      label = labels.key
+      value = labels.value
+    }
   }
-  labels {
-    label = "dev.mathewrumsey.grafana.instance"
-    value = "default"
+  networks_advanced {
+    name = module.docker_access_network.name
   }
-  labels {
-    label = "net.unraid.docker.icon"
-    value = "https://raw.githubusercontent.com/aeleos/cloudflared/main/cloudflare-icon.png"
-  }
-  upload = {
+  restart = "always"
+  upload {
     file        = local.cloudflared_token_file
     content     = data.cloudflare_zero_trust_tunnel_cloudflared_token.this.token
-    permissions = "0400"
+    permissions = "0444"
   }
+}
 
+resource "docker_image" "cloudflared" {
+  name          = "cloudflare/cloudflared:latest"
+  keep_locally  = true
+  pull_triggers = [timestamp()]
 }
 
 #endregion
