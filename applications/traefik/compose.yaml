@@ -135,8 +135,9 @@ services:
       cloudflared.access:
         aliases:
           - proxy.${MATHEWRUMSEY_DEV_DOMAIN__APEX} # Provides a clean way to hot-swap proxy services with Cloudflare Tunnel
-      grafana.access:
       filebrowser-ttrpg.access:
+      grafana.access:
+      nordvpn-lynx-client.access:
       photoprism-ttrpg.ingress:
       photoprism-xkcd.ingress:
       pihole.access:

@@ -68,7 +68,8 @@ services:
       dev.mathewrumsey.traefik.instance: ingress
       traefik.docker.network: nordvpn-lynx-client.access
       traefik.enable: "true"
-      traefik.http.services.sensitive_application_example.loadBalancer.server.port: 80
+      traefik.http.routers.sensitive_application_example.rule: Host(`sensitive-application-example.${MATHEWRUMSEY_DEV_DOMAIN__APEX:?}`)
+      traefik.http.services.sensitive_application_example.loadbalancer.server.port: 80
     network_mode: service:nordvpn-lynx-client
     restart: unless-stopped
     volumes:
